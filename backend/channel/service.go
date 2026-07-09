@@ -1221,9 +1221,9 @@ func testAPIKey(ctx context.Context, ch *connector.Channel, key, provider, model
 func testOpenAICompatibleKey(ctx context.Context, ch *connector.Channel, key, model, prompt string) *connector.APIKeyTestResult {
 	result := &connector.APIKeyTestResult{Model: model, Provider: "openai"}
 	body, _ := json.Marshal(map[string]any{
-		"model": model,
-		"messages": []map[string]string{{"role": "user", "content": prompt}},
-		"stream": false,
+		"model":      model,
+		"messages":   []map[string]string{{"role": "user", "content": prompt}},
+		"stream":     false,
 		"max_tokens": 16,
 	})
 	return postAPIKeyTest(ctx, ch, key, "/v1/chat/completions", body, result, nil)
@@ -1232,8 +1232,8 @@ func testOpenAICompatibleKey(ctx context.Context, ch *connector.Channel, key, mo
 func testAnthropicCompatibleKey(ctx context.Context, ch *connector.Channel, key, model, prompt string) *connector.APIKeyTestResult {
 	result := &connector.APIKeyTestResult{Model: model, Provider: "anthropic"}
 	body, _ := json.Marshal(map[string]any{
-		"model": model,
-		"messages": []map[string]string{{"role": "user", "content": prompt}},
+		"model":      model,
+		"messages":   []map[string]string{{"role": "user", "content": prompt}},
 		"max_tokens": 16,
 	})
 	return postAPIKeyTest(ctx, ch, key, "/v1/messages", body, result, func(req *http.Request) {
