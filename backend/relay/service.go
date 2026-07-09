@@ -84,11 +84,13 @@ type Summary struct {
 }
 
 type UsersPage struct {
-	Items    []UserUsage `json:"items"`
-	Total    int         `json:"total"`
-	Page     int         `json:"page"`
-	PageSize int         `json:"page_size"`
-	Pages    int         `json:"pages"`
+	Items      []UserUsage `json:"items"`
+	Total      int         `json:"total"`
+	Page       int         `json:"page"`
+	PageSize   int         `json:"page_size"`
+	Pages      int         `json:"pages"`
+	ActualCost float64     `json:"actual_cost"`
+	Cost       float64     `json:"cost"`
 }
 
 type UserUsage struct {
@@ -218,7 +220,7 @@ func (s *Service) Summary(ctx context.Context, date string) (*Summary, error) {
 	for _, log := range logs {
 		mult := multiplierFor(mults, log.AccountID, 0)
 		out.ActualCost += log.ActualCost
-		out.Cost += log.ActualCost / mult
+		out.Cost += log.ActualCost * mult
 		out.RequestCount += log.RequestCount
 	}
 	if stats != nil && stats.ActualCost > 0 {
@@ -283,6 +285,11 @@ func (s *Service) Users(ctx context.Context, date string, page, pageSize int) (*
 		return nil, err
 	}
 	items := aggregateUsers(logs, mults)
+	var actualCost, cost float64
+	for _, item := range items {
+		actualCost += item.ActualCost
+		cost += item.Cost
+	}
 	total := len(items)
 	start := (page - 1) * pageSize
 	if start > total {
@@ -296,7 +303,7 @@ func (s *Service) Users(ctx context.Context, date string, page, pageSize int) (*
 	if total > 0 {
 		pages = int(math.Ceil(float64(total) / float64(pageSize)))
 	}
-	return &UsersPage{Items: items[start:end], Total: total, Page: page, PageSize: pageSize, Pages: pages}, nil
+	return &UsersPage{Items: items[start:end], Total: total, Page: page, PageSize: pageSize, Pages: pages, ActualCost: round4(actualCost), Cost: round4(cost)}, nil
 }
 
 var errNotConfigured = errors.New("relay is not configured")
@@ -566,7 +573,7 @@ func aggregateUsers(logs []usageLog, multipliers map[int64]float64) []UserUsage 
 			accountMaps[key] = map[int64]*AccountUsageDetail{}
 		}
 		mult := multiplierFor(multipliers, log.AccountID, 0)
-		cost := log.ActualCost / mult
+		cost := log.ActualCost * mult
 		user.ActualCost += log.ActualCost
 		user.Cost += cost
 		user.RequestCount += log.RequestCount

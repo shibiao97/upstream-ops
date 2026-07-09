@@ -285,6 +285,8 @@ export interface RelayUsersPage {
   page: number
   page_size: number
   pages: number
+  actual_cost: number
+  cost: number
 }
 
 export interface SystemAuthConfig {

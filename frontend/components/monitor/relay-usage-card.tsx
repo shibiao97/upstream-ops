@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { ChevronDown, ChevronRight, RefreshCw, Settings, Server } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -114,7 +114,7 @@ export function RelayUsageCard() {
 
   return (
     <>
-      <Card className="min-h-0 overflow-hidden border border-border shadow-none lg:h-80">
+      <Card className="flex min-h-0 flex-col overflow-hidden border border-border shadow-none lg:h-80">
         <CardHeader className="flex shrink-0 flex-row items-center justify-between px-4 pb-2 sm:px-6">
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
             <Server className="size-4 text-brand" />
@@ -124,7 +124,7 @@ export function RelayUsageCard() {
             <Settings className="size-3.5" />
           </Button>
         </CardHeader>
-        <CardContent className="flex h-full min-h-0 flex-col px-4 pb-4 sm:px-6">
+        <CardContent className="flex min-h-0 flex-1 flex-col px-4 pb-3 sm:px-6">
           {!configured ? (
             <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border px-4 text-center">
               <p className="text-sm font-medium text-foreground">{"还没有配置 Sub2API 管理端"}</p>
@@ -140,7 +140,7 @@ export function RelayUsageCard() {
                 <Metric label="今日用户消费" value={money(data?.actual_cost)} tone="brand" />
                 <Metric label="今日成本" value={money(data?.cost)} tone="warning" />
               </div>
-              <div className="mt-3 rounded-lg border border-border p-3 text-xs">
+              <div className="mt-2 rounded-lg border border-border p-2.5 text-xs">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-muted-foreground">{"请求数"}</span>
                   <span className="font-medium tabular-nums">{data?.request_count ?? 0}</span>
@@ -161,7 +161,7 @@ export function RelayUsageCard() {
                 </div>
                 {data?.last_error ? <p className="mt-2 line-clamp-2 text-danger">{data.last_error}</p> : null}
               </div>
-              <div className="mt-auto flex items-center gap-2 pt-3">
+              <div className="mt-auto flex items-center gap-2 pt-2">
                 <Button size="sm" variant="outline" className="flex-1" onClick={() => summary.refetch()}>
                   <RefreshCw className="size-3.5" />
                   {"刷新"}
@@ -183,9 +183,9 @@ export function RelayUsageCard() {
 
 function Metric({ label, value, tone }: { label: string; value: string; tone: "brand" | "warning" }) {
   return (
-    <div className="rounded-lg border border-border p-3">
+    <div className="rounded-lg border border-border p-2.5">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={cn("mt-2 text-2xl font-semibold tabular-nums", tone === "brand" ? "text-brand" : "text-warning")}>{value}</p>
+      <p className={cn("mt-1.5 text-xl font-semibold tabular-nums", tone === "brand" ? "text-brand" : "text-warning")}>{value}</p>
     </div>
   )
 }
@@ -366,14 +366,6 @@ function RelayUsersDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
     }
   }, [open, date, page])
 
-  const totals = useMemo(() => {
-    const rows = data?.items ?? []
-    return rows.reduce(
-      (acc, row) => ({ actual: acc.actual + row.actual_cost, cost: acc.cost + row.cost }),
-      { actual: 0, cost: 0 },
-    )
-  }, [data])
-
   function toggle(row: RelayUserUsage) {
     const key = `${row.user_id}:${row.username}`
     setExpanded((prev) => {
@@ -394,11 +386,18 @@ function RelayUsersDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Input type="date" className="w-44" value={date} onChange={(e) => { setDate(e.target.value); setPage(1) }} />
           <div className="flex gap-4 text-xs text-muted-foreground">
-            <span>{"本页实际消费 "}<b className="text-foreground">{money(totals.actual)}</b></span>
-            <span>{"本页成本 "}<b className="text-foreground">{money(totals.cost)}</b></span>
+            <span>{"所选日期实际消费 "}<b className="text-foreground">{money(data?.actual_cost)}</b></span>
+            <span>{"所选日期成本 "}<b className="text-foreground">{money(data?.cost)}</b></span>
           </div>
         </div>
         <ScrollArea className="max-h-[58vh] rounded-md border border-border">
+          <div className="hidden grid-cols-[32px_1fr_110px_110px_110px] gap-3 border-b border-border px-4 py-2 text-[11px] text-muted-foreground sm:grid">
+            <span />
+            <span>{"用户 / 主要账号"}</span>
+            <span className="text-right">{"请求数"}</span>
+            <span className="text-right">{"实际消费"}</span>
+            <span className="text-right">{"成本"}</span>
+          </div>
           {loading && !data ? <p className="px-4 py-6 text-sm text-muted-foreground">{"加载中…"}</p> : null}
           {!loading && (data?.items.length ?? 0) === 0 ? <p className="px-4 py-6 text-sm text-muted-foreground">{"暂无消费记录"}</p> : null}
           <div className="divide-y divide-border">
@@ -407,9 +406,9 @@ function RelayUsersDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
               const isOpen = expanded.has(key)
               return (
                 <div key={key} className="px-4 py-3">
-                  <button type="button" className="flex w-full items-center gap-3 text-left" onClick={() => toggle(row)}>
+                  <button type="button" className="grid w-full grid-cols-[24px_1fr_86px] items-center gap-3 text-left sm:grid-cols-[24px_1fr_110px_110px_110px]" onClick={() => toggle(row)}>
                     {isOpen ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{row.username}</p>
                       <p className="text-xs text-muted-foreground">{row.main_account || "未知账号"}</p>
                     </div>
@@ -417,12 +416,8 @@ function RelayUsersDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                       <p className="font-medium text-foreground">{row.request_count} 请求</p>
                       <p className="text-muted-foreground">{"账号 "}{row.accounts.length}</p>
                     </div>
-                    <div className="w-32 text-right">
-                      <p className="text-[10px] text-muted-foreground">{"实际消费"}</p>
-                      <p className="text-sm font-semibold tabular-nums text-brand">{money(row.actual_cost)}</p>
-                      <p className="mt-1 text-[10px] text-muted-foreground">{"成本"}</p>
-                      <p className="text-xs tabular-nums text-warning">{money(row.cost)}</p>
-                    </div>
+                    <p className="text-right text-sm font-semibold tabular-nums text-brand">{money(row.actual_cost)}</p>
+                    <p className="hidden text-right text-sm tabular-nums text-warning sm:block">{money(row.cost)}</p>
                   </button>
                   {isOpen ? (
                     <div className="mt-3 rounded-lg bg-muted/30">

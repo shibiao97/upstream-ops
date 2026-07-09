@@ -90,6 +90,9 @@ func TestRelayUsersAggregateAndSortByActualCost(t *testing.T) {
 		case "/api/v1/admin/accounts":
 			_, _ = w.Write([]byte(`{"code":0,"data":{"items":[{"id":1,"name":"acc-a","rate_multiplier":2},{"id":2,"name":"acc-b","rate_multiplier":4}]}}`))
 		case "/api/v1/admin/usage":
+			if got := r.URL.Query().Get("start_date"); got != "2026-07-09" {
+				t.Errorf("usage start_date = %q, want 2026-07-09", got)
+			}
 			_, _ = w.Write([]byte(`{"code":0,"data":{"items":[
 				{"user_id":10,"username":"u10","account_id":1,"account_name":"acc-a","actual_cost":6},
 				{"user_id":20,"username":"u20","account_id":2,"account_name":"acc-b","actual_cost":10},
@@ -107,7 +110,7 @@ func TestRelayUsersAggregateAndSortByActualCost(t *testing.T) {
 	deps := newRelayTestDeps(t, fake.URL)
 	registerRelay(r.Group("/api"), deps)
 
-	saveReq := httptest.NewRequest(http.MethodPut, "/api/relay/config", strings.NewReader(`{"site_url":"`+fake.URL+`","admin_email":"admin@example.com","password":"p","enabled":true,"account_multipliers":[{"account_id":1,"name":"acc-a","multiplier":2},{"account_id":2,"name":"acc-b","multiplier":4}]}`))
+	saveReq := httptest.NewRequest(http.MethodPut, "/api/relay/config", strings.NewReader(`{"site_url":"`+fake.URL+`","admin_email":"admin@example.com","password":"p","enabled":true,"account_multipliers":[{"account_id":1,"name":"acc-a","multiplier":0.1},{"account_id":2,"name":"acc-b","multiplier":0.2}]}`))
 	saveReq.Header.Set("Content-Type", "application/json")
 	saveRec := httptest.NewRecorder()
 	r.ServeHTTP(saveRec, saveReq)
@@ -127,8 +130,8 @@ func TestRelayUsersAggregateAndSortByActualCost(t *testing.T) {
 	if err := json.Unmarshal(summaryRec.Body.Bytes(), &summaryResp); err != nil {
 		t.Fatalf("decode summary: %v", err)
 	}
-	if summaryResp.Data.ActualCost != 18 || summaryResp.Data.Cost != 6.0 {
-		t.Fatalf("summary = %#v, want actual 18 cost 6", summaryResp.Data)
+	if summaryResp.Data.ActualCost != 18 || summaryResp.Data.Cost != 3.0 {
+		t.Fatalf("summary = %#v, want actual 18 cost 3", summaryResp.Data)
 	}
 
 	usersReq := httptest.NewRequest(http.MethodGet, "/api/relay/users?date=2026-07-09&page=1&page_size=20", nil)
@@ -146,7 +149,10 @@ func TestRelayUsersAggregateAndSortByActualCost(t *testing.T) {
 	if len(usersResp.Data.Items) != 2 || usersResp.Data.Items[0].Username != "u20" || usersResp.Data.Items[0].ActualCost != 10 {
 		t.Fatalf("users not sorted by actual cost desc: %#v", usersResp.Data.Items)
 	}
-	if usersResp.Data.Items[1].Cost != 3.5 || usersResp.Data.Items[1].MainAccount != "acc-a" {
+	if usersResp.Data.ActualCost != 18 || usersResp.Data.Cost != 3.0 {
+		t.Fatalf("users totals = %#v, want actual 18 cost 3", usersResp.Data)
+	}
+	if usersResp.Data.Items[1].Cost != 1.0 || usersResp.Data.Items[1].MainAccount != "acc-a" {
 		t.Fatalf("user aggregate = %#v", usersResp.Data.Items[1])
 	}
 }
