@@ -209,25 +209,16 @@ func (s *Service) Summary(ctx context.Context, date string) (*Summary, error) {
 	if !cfg.Enabled {
 		return out, nil
 	}
-	stats, _ := s.fetchUsageStats(ctx, cfg, password, date)
 	logs, err := s.fetchUsageLogs(ctx, cfg, password, date)
 	if err != nil {
 		_ = s.Repo.SetCheckResult(cfg.ID, err.Error())
 		return nil, err
 	}
+	logs = excludeAdminUsageLogs(logs, cfg.AdminEmail)
 	for _, log := range logs {
 		out.ActualCost += log.ActualCost
 		out.Cost += log.AccountCost
 		out.RequestCount += log.RequestCount
-	}
-	if stats != nil && stats.ActualCost > 0 {
-		out.ActualCost = stats.ActualCost
-	}
-	if stats != nil && stats.Cost > 0 {
-		out.Cost = stats.Cost
-	}
-	if stats != nil && stats.RequestCount > 0 {
-		out.RequestCount = stats.RequestCount
 	}
 	out.ActualCost = round4(out.ActualCost)
 	out.Cost = round4(out.Cost)
@@ -281,6 +272,7 @@ func (s *Service) Users(ctx context.Context, date string, page, pageSize int) (*
 		_ = s.Repo.SetCheckResult(cfg.ID, err.Error())
 		return nil, err
 	}
+	logs = excludeAdminUsageLogs(logs, cfg.AdminEmail)
 	mults, err := s.multiplierMap(cfg.ID)
 	if err != nil {
 		return nil, err
@@ -580,6 +572,21 @@ func (s *Service) multiplierMap(configID uint) (map[int64]float64, error) {
 		out[m.AccountID] = m.Multiplier
 	}
 	return out, nil
+}
+
+func excludeAdminUsageLogs(logs []usageLog, adminEmail string) []usageLog {
+	admin := strings.ToLower(strings.TrimSpace(adminEmail))
+	if admin == "" || len(logs) == 0 {
+		return logs
+	}
+	out := logs[:0]
+	for _, log := range logs {
+		if strings.ToLower(strings.TrimSpace(log.Username)) == admin {
+			continue
+		}
+		out = append(out, log)
+	}
+	return out
 }
 
 func aggregateUsers(logs []usageLog, multipliers map[int64]float64) []UserUsage {

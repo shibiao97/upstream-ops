@@ -114,7 +114,7 @@ export function RelayUsageCard() {
 
   return (
     <>
-      <Card className="flex min-h-0 flex-col overflow-hidden border border-border shadow-none lg:h-[22rem]">
+      <Card className="flex min-h-0 flex-col overflow-hidden border border-border shadow-none lg:h-80">
         <CardHeader className="flex shrink-0 flex-row items-center justify-between px-4 pb-2 sm:px-6">
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
             <Server className="size-4 text-brand" />
@@ -140,28 +140,28 @@ export function RelayUsageCard() {
                 <Metric label="今日用户消费" value={money(data?.actual_cost)} tone="brand" />
                 <Metric label="今日账号成本" value={money(data?.cost)} tone="warning" />
               </div>
-              <div className="mt-2 rounded-lg border border-border p-2.5 text-xs">
+              <div className="mt-2 rounded-lg border border-border p-2 text-xs">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-muted-foreground">{"请求数"}</span>
                   <span className="font-medium tabular-nums">{data?.request_count ?? 0}</span>
                 </div>
-                <div className="mt-2 flex items-center justify-between gap-2">
+                <div className="mt-1.5 flex items-center justify-between gap-2">
                   <span className="text-muted-foreground">{"状态"}</span>
                   <Badge variant={data?.last_error ? "destructive" : "outline"}>
                     {data?.last_error ? "异常" : data?.enabled === false ? "已停用" : "正常"}
                   </Badge>
                 </div>
-                <div className="mt-2 flex items-center justify-between gap-2">
+                <div className="mt-1.5 flex items-center justify-between gap-2">
                   <span className="text-muted-foreground">{"最后检查"}</span>
                   <span>{relativeTime(data?.last_checked_at)}</span>
                 </div>
-                <div className="mt-2 flex items-center justify-between gap-2">
+                <div className="mt-1.5 flex items-center justify-between gap-2">
                   <span className="text-muted-foreground">{"拉取间隔"}</span>
                   <span>{pullInterval}{" 分钟"}</span>
                 </div>
-                {data?.last_error ? <p className="mt-2 line-clamp-2 text-danger">{data.last_error}</p> : null}
+                {data?.last_error ? <p className="mt-1.5 line-clamp-2 text-danger">{data.last_error}</p> : null}
               </div>
-              <div className="mt-auto flex items-center gap-2 pt-2">
+              <div className="mt-auto flex items-center gap-2 pt-1.5">
                 <Button size="sm" variant="outline" className="flex-1" onClick={() => summary.refetch()}>
                   <RefreshCw className="size-3.5" />
                   {"刷新"}
@@ -183,9 +183,9 @@ export function RelayUsageCard() {
 
 function Metric({ label, value, tone }: { label: string; value: string; tone: "brand" | "warning" }) {
   return (
-    <div className="rounded-lg border border-border p-2.5">
+    <div className="rounded-lg border border-border p-2">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={cn("mt-1.5 text-xl font-semibold tabular-nums", tone === "brand" ? "text-brand" : "text-warning")}>{value}</p>
+      <p className={cn("mt-1 text-xl font-semibold tabular-nums", tone === "brand" ? "text-brand" : "text-warning")}>{value}</p>
     </div>
   )
 }
