@@ -40,6 +40,14 @@ export interface ApiError extends Error {
   body?: unknown
 }
 
+const BASE_PATH = import.meta.env.BASE_URL === "/" ? "" : import.meta.env.BASE_URL.replace(/\/$/, "")
+
+export function apiURL(path: string): string {
+  if (path.startsWith("http")) return path
+  if (path.startsWith("/api")) return `${BASE_PATH}${path}`
+  return `${BASE_PATH}/api${path.startsWith("/") ? path : `/${path}`}`
+}
+
 interface FetchOptions extends RequestInit {
   // 标记是登录请求本身，不要在 401 时触发登出回调（让 LoginPage 自己显示错误）。
   skipAuthErrorHandler?: boolean
@@ -52,9 +60,7 @@ export async function apiFetch<T = unknown>(
   path: string,
   options: FetchOptions = {},
 ): Promise<T> {
-  const url = path.startsWith("/api") || path.startsWith("http")
-    ? path
-    : `/api${path.startsWith("/") ? path : `/${path}`}`
+  const url = apiURL(path)
 
   const headers = new Headers(options.headers)
   headers.set("Accept", "application/json")

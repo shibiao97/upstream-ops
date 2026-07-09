@@ -2,7 +2,7 @@
  * SSE 流读取：用 fetch 而非 EventSource，以便附带 Authorization Bearer 头。
  */
 
-import { getToken, notifyUnauthorized } from "@/lib/api"
+import { apiURL, getToken, notifyUnauthorized } from "@/lib/api"
 
 export type ProgressStage =
   | "captcha"
@@ -41,7 +41,7 @@ async function streamSSE(
   { onEvent, signal }: SyncOptions,
 ): Promise<void> {
   const token = getToken()
-  const res = await fetch(path, {
+  const res = await fetch(apiURL(path), {
     method: "POST",
     headers: {
       Accept: "text/event-stream",

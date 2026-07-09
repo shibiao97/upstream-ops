@@ -25,7 +25,7 @@ RUN pnpm install --no-frozen-lockfile
 
 # 再拷源码，build 产物在 /web/dist
 COPY frontend/ ./
-RUN pnpm build
+RUN VITE_BASE_PATH=/upstream-ops/ pnpm build
 
 # ---------- Stage 2: 后端 ----------
 FROM golang:1.23-alpine AS go-builder

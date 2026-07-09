@@ -22,7 +22,7 @@ createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <AuthGate>
           <RefreshProvider>
-            <BrowserRouter>
+            <BrowserRouter basename={import.meta.env.BASE_URL === "/" ? undefined : import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <AddChannelProvider>
                 <Routes>
                   <Route element={<AppShell />}>
