@@ -6,6 +6,7 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { useBalanceTrend, useCostTrend, useDashboardSummary } from "@/lib/queries"
 import { money } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { useOwnerFilter } from "@/lib/owner-filter-context"
 
 function formatY(n: number) {
   if (n === 0) return "$0"
@@ -67,9 +68,10 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
 
 export function BalanceOverview() {
   const isMobile = useIsMobile()
-  const trend = useBalanceTrend(7)
-  const costTrend = useCostTrend(7)
-  const summary = useDashboardSummary()
+  const { ownerFilter } = useOwnerFilter()
+  const trend = useBalanceTrend(7, ownerFilter)
+  const costTrend = useCostTrend(7, ownerFilter)
+  const summary = useDashboardSummary(ownerFilter)
 
   const channels = summary.data?.channels ?? []
   const trendMap = new Map<string, ChartPoint>()

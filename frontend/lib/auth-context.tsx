@@ -26,7 +26,7 @@ interface AuthContextValue {
   isSuperAdmin: boolean
   /** 后端关闭了鉴权（AUTH_ENABLED=false），整套 UI 当作"已登录"渲染。 */
   authDisabled: boolean
-  login: (username: string, password: string, code: string) => Promise<void>
+  login: (username: string, password: string) => Promise<void>
   register: (username: string, password: string, code: string) => Promise<void>
   logout: () => void
 }
@@ -117,10 +117,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus("authenticated")
   }, [])
 
-  const login = useCallback(async (u: string, p: string, code: string) => {
+  const login = useCallback(async (u: string, p: string) => {
     const res = await apiFetch<LoginResponse>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ username: u, password: p, code }),
+      body: JSON.stringify({ username: u, password: p }),
       skipAuthErrorHandler: true,
     })
     applyAuth(res)

@@ -33,7 +33,7 @@ export function LoginPage() {
       if (mode === "register") {
         await register(username.trim(), password, code.trim())
       } else {
-        await login(username.trim(), password, code.trim())
+        await login(username.trim(), password)
       }
     } catch (err) {
       const e = err as ApiError
@@ -99,24 +99,26 @@ export function LoginPage() {
                 disabled={submitting}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="code">邮箱验证码</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="code"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  required
-                  disabled={submitting}
-                />
-                <Button type="button" variant="outline" onClick={sendCode} disabled={submitting || sending || !username.trim()}>
-                  {sending ? "发送中…" : "发送"}
-                </Button>
+            {mode === "register" ? (
+              <div className="space-y-2">
+                <Label htmlFor="code">邮箱验证码</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="code"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    required
+                    disabled={submitting}
+                  />
+                  <Button type="button" variant="outline" onClick={sendCode} disabled={submitting || sending || !username.trim()}>
+                    {sending ? "发送中…" : "发送"}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">仅支持 qq.com、163.com、gmail.com 邮箱。</p>
               </div>
-              <p className="text-xs text-muted-foreground">仅支持 qq.com、163.com、gmail.com 邮箱。</p>
-            </div>
+            ) : null}
             {error ? (
               <p className="text-sm text-destructive" role="alert">
                 {error}

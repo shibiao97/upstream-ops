@@ -54,6 +54,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog"
 import { useChannels, useChannelsPage, useChannelRates, useUsers } from "@/lib/queries"
 import { apiFetch } from "@/lib/api"
 import { useAuth } from "@/lib/auth-context"
+import { useOwnerFilter } from "@/lib/owner-filter-context"
 import { useTriggerRefresh } from "@/lib/refresh-context"
 import { channelTypeLabel, decimal, formatRatio, money, relativeTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -519,7 +520,7 @@ function SyncProgressStrip({ state }: { state: ChannelSyncState }) {
 
 export function ChannelCards() {
   const { isSuperAdmin } = useAuth()
-  const [ownerFilter, setOwnerFilter] = useState<number | "all">("all")
+  const { ownerFilter, setOwnerFilter } = useOwnerFilter()
   const users = useUsers("", isSuperAdmin)
   const { data: channels, loading: channelsLoading } = useChannels(ownerFilter)
   const [page, setPage] = useState(1)

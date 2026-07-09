@@ -3,6 +3,7 @@
 import { Outlet } from "react-router-dom"
 import { MonitorHeader } from "@/components/monitor/monitor-header"
 import { DockBar } from "@/components/monitor/dock-bar"
+import { OwnerFilterProvider } from "@/lib/owner-filter-context"
 
 /**
  * AppShell 是所有路由共享的外壳：顶部 header + 中间 Outlet（+ 可选底部 dock）。
@@ -14,18 +15,20 @@ const SHOW_DOCK = false
 
 export function AppShell() {
   return (
-    <div className="min-h-screen bg-background">
-      <MonitorHeader />
-      <main
-        className={
-          SHOW_DOCK
-            ? "mx-auto max-w-360 space-y-4 px-3 py-3 pb-24 sm:space-y-5 sm:px-5 sm:py-5"
-            : "mx-auto max-w-360 space-y-4 px-3 py-3 sm:space-y-5 sm:px-5 sm:py-5"
-        }
-      >
-        <Outlet />
-      </main>
-      {SHOW_DOCK ? <DockBar /> : null}
-    </div>
+    <OwnerFilterProvider>
+      <div className="min-h-screen bg-background">
+        <MonitorHeader />
+        <main
+          className={
+            SHOW_DOCK
+              ? "mx-auto max-w-360 space-y-4 px-3 py-3 pb-24 sm:space-y-5 sm:px-5 sm:py-5"
+              : "mx-auto max-w-360 space-y-4 px-3 py-3 sm:space-y-5 sm:px-5 sm:py-5"
+          }
+        >
+          <Outlet />
+        </main>
+        {SHOW_DOCK ? <DockBar /> : null}
+      </div>
+    </OwnerFilterProvider>
   )
 }

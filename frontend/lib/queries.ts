@@ -134,20 +134,21 @@ function useApi<T>(path: string | null, watchRefresh = true): QueryState<T> {
   }
 }
 
-export function useDashboardSummary() {
-  return useApi<DashboardSummary>("/dashboard/summary")
+export function useDashboardSummary(ownerUserID?: number | "all") {
+  const suffix = ownerQuery(ownerUserID).replace(/^&/, "?")
+  return useApi<DashboardSummary>(`/dashboard/summary${suffix}`)
 }
 
 export function useAppVersion() {
   return useApi<AppVersion>("/version", false)
 }
 
-export function useBalanceTrend(days = 7) {
-  return useApi<BalanceTrendPoint[]>(`/dashboard/balance-trend?days=${days}`)
+export function useBalanceTrend(days = 7, ownerUserID?: number | "all") {
+  return useApi<BalanceTrendPoint[]>(`/dashboard/balance-trend?days=${days}${ownerQuery(ownerUserID)}`)
 }
 
-export function useCostTrend(days = 7) {
-  return useApi<CostTrendPoint[]>(`/dashboard/cost-trend?days=${days}`)
+export function useCostTrend(days = 7, ownerUserID?: number | "all") {
+  return useApi<CostTrendPoint[]>(`/dashboard/cost-trend?days=${days}${ownerQuery(ownerUserID)}`)
 }
 
 export function useRelayConfig() {
@@ -159,7 +160,7 @@ export function useRelaySummary(date?: string) {
   return useApi<RelaySummary>(`/relay/summary${q}`)
 }
 
-function ownerQuery(ownerUserID?: number | "all") {
+export function ownerQuery(ownerUserID?: number | "all") {
   return ownerUserID && ownerUserID !== "all" ? `&owner_user_id=${ownerUserID}` : ""
 }
 
@@ -227,11 +228,12 @@ export function useMultiChannelRates(channelIDs: number[]) {
   return { data, loading, refetch: () => setBump((b) => b + 1) }
 }
 
-export function useRateChanges(page = 1, pageSize = 20, channelID?: number) {
+export function useRateChanges(page = 1, pageSize = 20, channelID?: number, ownerUserID?: number | "all") {
   const q = new URLSearchParams()
   q.set("page", String(page))
   q.set("page_size", String(pageSize))
   if (channelID != null) q.set("channel_id", String(channelID))
+  if (ownerUserID && ownerUserID !== "all") q.set("owner_user_id", String(ownerUserID))
   return useApi<RateChangeLogPage>(`/rate-changes?${q.toString()}`)
 }
 
@@ -239,15 +241,15 @@ export function useNotificationChannels() {
   return useApi<NotificationChannel[]>("/notifications/channels")
 }
 
-export function useNotificationLogs(page = 1, pageSize = 20) {
+export function useNotificationLogs(page = 1, pageSize = 20, ownerUserID?: number | "all") {
   return useApi<NotificationLogPage>(
-    `/notifications/logs?page=${page}&page_size=${pageSize}`,
+    `/notifications/logs?page=${page}&page_size=${pageSize}${ownerQuery(ownerUserID)}`,
   )
 }
 
-export function useAnnouncements(page = 1, pageSize = 20) {
+export function useAnnouncements(page = 1, pageSize = 20, ownerUserID?: number | "all") {
   return useApi<UpstreamAnnouncementPage>(
-    `/announcements?page=${page}&page_size=${pageSize}`,
+    `/announcements?page=${page}&page_size=${pageSize}${ownerQuery(ownerUserID)}`,
   )
 }
 

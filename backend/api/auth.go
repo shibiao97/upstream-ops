@@ -22,7 +22,6 @@ func registerAuth(g *gin.RouterGroup, d *Deps) {
 type loginInput struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
-	Code     string `json:"code" binding:"required"`
 }
 
 type registerInput struct {
@@ -47,15 +46,7 @@ func login(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
-	username, err := normalizeAllowedEmail(in.Username)
-	if err != nil {
-		fail(c, http.StatusBadRequest, err)
-		return
-	}
-	if err := verifyEmailCode(username, "login", in.Code); err != nil {
-		fail(c, http.StatusBadRequest, err)
-		return
-	}
+	username := in.Username
 	token, exp, u, err := d.Runtime.CurrentAuth().Login(username, in.Password)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})

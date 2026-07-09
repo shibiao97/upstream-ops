@@ -14,14 +14,16 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { apiFetch } from "@/lib/api"
 import type { RateChangeLog, RateChangeLogPage } from "@/lib/api-types"
 import { channelTypeLabel, formatRatio, ratioDelta, relativeTime, shortTime } from "@/lib/format"
-import { useChannels, useDashboardSummary } from "@/lib/queries"
+import { ownerQuery, useChannels, useDashboardSummary } from "@/lib/queries"
+import { useOwnerFilter } from "@/lib/owner-filter-context"
 import { cn } from "@/lib/utils"
 
 const DIALOG_SIZE = 20
 
 export function MultiplierChanges() {
-  const summary = useDashboardSummary()
-  const channels = useChannels()
+  const { ownerFilter } = useOwnerFilter()
+  const summary = useDashboardSummary(ownerFilter)
+  const channels = useChannels(ownerFilter)
   const [detailOpen, setDetailOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [feed, setFeed] = useState<RateChangeLog[]>([])
@@ -50,7 +52,7 @@ export function MultiplierChanges() {
     let cancelled = false
     setFeedLoading(true)
     setFeedError(null)
-    apiFetch<RateChangeLogPage>(`/rate-changes?page=${page}&page_size=${DIALOG_SIZE}`)
+    apiFetch<RateChangeLogPage>(`/rate-changes?page=${page}&page_size=${DIALOG_SIZE}${ownerQuery(ownerFilter)}`)
       .then((res) => {
         if (cancelled) return
         const next = Array.isArray(res?.items) ? res.items : []
@@ -71,7 +73,7 @@ export function MultiplierChanges() {
     return () => {
       cancelled = true
     }
-  }, [detailOpen, page])
+  }, [detailOpen, page, ownerFilter])
 
   function openDetail() {
     setFeed([])

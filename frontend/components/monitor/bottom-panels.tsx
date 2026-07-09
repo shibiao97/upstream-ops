@@ -33,11 +33,13 @@ import {
   useDashboardSummary,
   useNotificationChannels,
   useNotificationLogs,
+  ownerQuery,
 } from "@/lib/queries"
 import { apiFetch } from "@/lib/api"
 import { useTriggerRefresh } from "@/lib/refresh-context"
 import { channelTypeLabel, dateTime, decimal, money, relativeTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { useOwnerFilter } from "@/lib/owner-filter-context"
 import { CaptchaFormDialog } from "@/components/monitor/captcha-form-dialog"
 import { NotificationFormDialog } from "@/components/monitor/notification-form-dialog"
 import type { LucideIcon } from "lucide-react"
@@ -71,6 +73,7 @@ const FEED_PREVIEW_SIZE = 10
 const FEED_DIALOG_SIZE = 20
 
 export function AlertFeed() {
+  const { ownerFilter } = useOwnerFilter()
   const [detailOpen, setDetailOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [feed, setFeed] = useState<NotificationLog[]>([])
@@ -80,7 +83,7 @@ export function AlertFeed() {
   })
   const [feedLoading, setFeedLoading] = useState(false)
   const [feedError, setFeedError] = useState<string | null>(null)
-  const preview = useNotificationLogs(1, FEED_PREVIEW_SIZE)
+  const preview = useNotificationLogs(1, FEED_PREVIEW_SIZE, ownerFilter)
   const items = preview.data?.items ?? []
 
   function loadNextPage() {
@@ -94,7 +97,7 @@ export function AlertFeed() {
     setFeedLoading(true)
     setFeedError(null)
     apiFetch<NotificationLogPage>(
-      `/notifications/logs?page=${page}&page_size=${FEED_DIALOG_SIZE}`,
+      `/notifications/logs?page=${page}&page_size=${FEED_DIALOG_SIZE}${ownerQuery(ownerFilter)}`,
     )
       .then((res) => {
         if (cancelled) return
@@ -116,7 +119,7 @@ export function AlertFeed() {
     return () => {
       cancelled = true
     }
-  }, [detailOpen, page])
+  }, [detailOpen, page, ownerFilter])
 
   function openDetail() {
     setFeed([])
@@ -255,8 +258,9 @@ export function AlertFeed() {
 }
 
 export function UpstreamAnnouncements() {
-  const summary = useDashboardSummary()
-  const preview = useAnnouncements(1, FEED_PREVIEW_SIZE)
+  const { ownerFilter } = useOwnerFilter()
+  const summary = useDashboardSummary(ownerFilter)
+  const preview = useAnnouncements(1, FEED_PREVIEW_SIZE, ownerFilter)
   const [active, setActive] = useState<UpstreamAnnouncement | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [page, setPage] = useState(1)
@@ -284,7 +288,7 @@ export function UpstreamAnnouncements() {
     setFeedLoading(true)
     setFeedError(null)
     apiFetch<{ items: UpstreamAnnouncement[]; total: number; pages: number }>(
-      `/announcements?page=${page}&page_size=${FEED_DIALOG_SIZE}`,
+      `/announcements?page=${page}&page_size=${FEED_DIALOG_SIZE}${ownerQuery(ownerFilter)}`,
     )
       .then((res) => {
         if (cancelled) return
@@ -306,7 +310,7 @@ export function UpstreamAnnouncements() {
     return () => {
       cancelled = true
     }
-  }, [detailOpen, page])
+  }, [detailOpen, page, ownerFilter])
 
   function openDetail() {
     setFeed([])

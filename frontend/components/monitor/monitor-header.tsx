@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/auth-context"
 import { apiFetch } from "@/lib/api"
 import { useTriggerRefresh } from "@/lib/refresh-context"
 import { useAppVersion, useChannels } from "@/lib/queries"
+import { useOwnerFilter } from "@/lib/owner-filter-context"
 import type { AppVersion } from "@/lib/api-types"
 import { relativeTime } from "@/lib/format"
 import { toast } from "sonner"
@@ -22,7 +23,8 @@ export function MonitorHeader() {
   const { theme, setTheme } = useTheme()
   const { username, authDisabled, isSuperAdmin, logout } = useAuth()
   const refresh = useTriggerRefresh()
-  const channels = useChannels()
+  const { ownerFilter } = useOwnerFilter()
+  const channels = useChannels(ownerFilter)
   const appVersion = useAppVersion()
   const [mounted, setMounted] = useState(false)
   const [syncing, setSyncing] = useState(false)

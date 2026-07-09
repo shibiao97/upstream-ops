@@ -3,6 +3,7 @@
 import { ArrowUpRight, DollarSign, MessageSquare, Wallet } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+import { useOwnerFilter } from "@/lib/owner-filter-context"
 import { useDashboardSummary, useRateChanges } from "@/lib/queries"
 import { money } from "@/lib/format"
 import type { LucideIcon } from "lucide-react"
@@ -24,8 +25,9 @@ function countTodayChanges(changes: { changed_at: string }[]) {
 }
 
 export function KpiRow() {
-  const summary = useDashboardSummary()
-  const recentChanges = useRateChanges(1, 100)
+  const { ownerFilter } = useOwnerFilter()
+  const summary = useDashboardSummary(ownerFilter)
+  const recentChanges = useRateChanges(1, 100, undefined, ownerFilter)
 
   const data = summary.data
   const total = data?.total_channels ?? 0

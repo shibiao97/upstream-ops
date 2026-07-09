@@ -85,7 +85,7 @@ func normalizeAllowedEmail(raw string) (string, error) {
 
 func normalizeCodeAction(raw string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "login", "register":
+	case "register":
 		return strings.ToLower(strings.TrimSpace(raw)), nil
 	default:
 		return "", errors.New("验证码类型无效")
