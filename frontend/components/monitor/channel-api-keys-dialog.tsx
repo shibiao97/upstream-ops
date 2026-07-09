@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, type FormEvent } from "react"
-import { Copy, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react"
+import { Copy, Loader2, Pencil, Play, Plus, Search, TestTube2, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import {
   Dialog,
@@ -42,6 +42,7 @@ import type {
   ChannelAPIKeyPage,
   ChannelAPIKeyReveal,
   ChannelAPIKeyStatus,
+  ChannelAPIKeyTestResult,
 } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
 
@@ -79,6 +80,8 @@ interface KeyForm {
 }
 
 const PAGE_SIZE = 10
+const TEST_MODELS = ["GPT-5.4", "gpt-4o", "gpt-4o-mini", "claude-sonnet-4-20250514", "gemini-2.5-pro"]
+const CUSTOM_MODEL = "__custom"
 
 const emptyForm: KeyForm = {
   name: "",
@@ -255,6 +258,12 @@ export function ChannelAPIKeysDialog({
   const [error, setError] = useState<string | null>(null)
   const [revealingID, setRevealingID] = useState<number | null>(null)
   const [revealedKeys, setRevealedKeys] = useState<Record<number, string>>({})
+  const [testingKey, setTestingKey] = useState<ChannelAPIKey | null>(null)
+  const [testModel, setTestModel] = useState(TEST_MODELS[0])
+  const [customModel, setCustomModel] = useState("")
+  const [testPrompt, setTestPrompt] = useState("What model are you? Answer briefly.")
+  const [testResult, setTestResult] = useState<ChannelAPIKeyTestResult | null>(null)
+  const [testing, setTesting] = useState(false)
 
   const items = data?.items ?? []
   const totalPages = Math.max(1, data?.pages ?? 1)
@@ -273,6 +282,9 @@ export function ChannelAPIKeysDialog({
     setError(null)
     setRevealingID(null)
     setRevealedKeys({})
+    setTestingKey(null)
+    setTestResult(null)
+    setTesting(false)
   }, [open, channel?.id])
 
   useEffect(() => {
@@ -476,6 +488,40 @@ export function ChannelAPIKeysDialog({
     }
   }
 
+  function openTest(key: ChannelAPIKey) {
+    setTestingKey(key)
+    setTestResult(null)
+    setTestModel(TEST_MODELS[0])
+    setCustomModel("")
+    setTestPrompt("What model are you? Answer briefly.")
+  }
+
+  async function runKeyTest() {
+    if (!channel || !testingKey) return
+    const model = testModel === CUSTOM_MODEL ? customModel.trim() : testModel
+    if (!model) {
+      toast.error("请选择或输入测试模型")
+      return
+    }
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await apiFetch<ChannelAPIKeyTestResult>(`/channels/${channel.id}/api-keys/${testingKey.id}/test`, {
+        method: "POST",
+        body: JSON.stringify({ model, prompt: testPrompt }),
+      })
+      setTestResult(res)
+      if (res.ok) toast.success("密钥可用")
+      else toast.error(res.error || "密钥测试失败")
+    } catch (e) {
+      const err = e as Error
+      setTestResult({ ok: false, status: 0, latency_ms: 0, model, error: err.message || "测试失败" })
+      toast.error(err.message || "测试失败")
+    } finally {
+      setTesting(false)
+    }
+  }
+
   async function deleteKey(key: ChannelAPIKey) {
     if (!channel) return
     const ok = await confirm({
@@ -501,7 +547,13 @@ export function ChannelAPIKeysDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          onOpenChange(next)
+          if (!next) setTestingKey(null)
+        }}
+      >
         <DialogContent className="sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>API 密钥管理</DialogTitle>
@@ -559,7 +611,7 @@ export function ChannelAPIKeysDialog({
                           <TableHead className="min-w-52">分组</TableHead>
                       <TableHead className="min-w-24">额度</TableHead>
                       <TableHead className="min-w-32">过期</TableHead>
-                      <TableHead className="min-w-28 text-right">操作</TableHead>
+                      <TableHead className="min-w-36 text-right">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -627,6 +679,15 @@ export function ChannelAPIKeysDialog({
                           </TableCell>
                           <TableCell>
                             <div className="flex justify-end gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                title="测试密钥"
+                                onClick={() => openTest(item)}
+                              >
+                                <TestTube2 className="size-4" />
+                              </Button>
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -767,6 +828,93 @@ export function ChannelAPIKeysDialog({
               </DialogFooter>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!testingKey} onOpenChange={(next) => !next && setTestingKey(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>测试密钥连接</DialogTitle>
+            <DialogDescription>
+              {testingKey ? `${testingKey.name || testingKey.id} · ${channel?.name ?? ""}` : "发送一次 OpenAI 兼容请求验证密钥。"}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium">{testingKey?.name || "未命名"}</p>
+                  <p className="text-xs text-muted-foreground">APIKEY · {testingKey ? groupDisplayName(testingKey) : "—"}</p>
+                </div>
+                <Badge variant="outline" className={cn(statusClass(testingKey?.status ?? "unknown"))}>
+                  {statusLabel(testingKey?.status ?? "unknown")}
+                </Badge>
+              </div>
+            </div>
+
+            <Field label="选择测试模型">
+              <Select value={testModel} onValueChange={setTestModel} disabled={testing}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TEST_MODELS.map((model) => (
+                    <SelectItem key={model} value={model}>{model}</SelectItem>
+                  ))}
+                  <SelectItem value={CUSTOM_MODEL}>自定义模型</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            {testModel === CUSTOM_MODEL ? (
+              <Field label="自定义模型">
+                <Input
+                  value={customModel}
+                  onChange={(e) => setCustomModel(e.target.value)}
+                  placeholder="例如 gpt-4o-mini"
+                  disabled={testing}
+                />
+              </Field>
+            ) : null}
+            <Field label="提示词">
+              <Input
+                value={testPrompt}
+                onChange={(e) => setTestPrompt(e.target.value)}
+                disabled={testing}
+              />
+            </Field>
+
+            <div className="min-h-28 rounded-lg bg-black p-4 font-mono text-sm text-white">
+              {testing ? (
+                <span className="inline-flex items-center gap-2 text-white/70">
+                  <Loader2 className="size-4 animate-spin" /> 正在测试…
+                </span>
+              ) : testResult ? (
+                <div className="space-y-2">
+                  <p className={testResult.ok ? "text-emerald-400" : "text-red-400"}>
+                    {testResult.ok ? "密钥可用" : "密钥不可用"}
+                    {testResult.status ? ` · HTTP ${testResult.status}` : ""}
+                    {testResult.latency_ms ? ` · ${testResult.latency_ms}ms` : ""}
+                  </p>
+                  {testResult.content ? <p className="whitespace-pre-wrap text-white/80">{testResult.content}</p> : null}
+                  {testResult.error ? <p className="whitespace-pre-wrap text-red-300">{testResult.error}</p> : null}
+                </div>
+              ) : (
+                <span className="inline-flex items-center gap-2 text-white/45">
+                  <Play className="size-4" /> 准备测试。点击“开始测试”按钮开始…
+                </span>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={testing} onClick={() => setTestingKey(null)}>
+              关闭
+            </Button>
+            <Button type="button" disabled={testing} onClick={() => void runKeyTest()} className="gap-1.5">
+              {testing ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+              开始测试
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       {confirmDialog}

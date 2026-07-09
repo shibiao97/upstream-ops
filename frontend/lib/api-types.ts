@@ -482,3 +482,12 @@ export interface ChannelAPIKeyGroup {
 export interface ChannelAPIKeyReveal {
   key: string
 }
+
+export interface ChannelAPIKeyTestResult {
+  ok: boolean
+  status: number
+  latency_ms: number
+  model: string
+  content?: string
+  error?: string
+}

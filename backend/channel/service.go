@@ -3,10 +3,14 @@
 package channel
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -1158,6 +1162,120 @@ func (s *Service) RevealAPIKey(ctx context.Context, channelID uint, keyID int64)
 	}
 	_ = s.Channels.SetLastError(c.ID, "")
 	return key, nil
+}
+
+func (s *Service) TestAPIKey(ctx context.Context, channelID uint, keyID int64, req connector.APIKeyTestRequest) (*connector.APIKeyTestResult, error) {
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		return nil, errors.New("请选择测试模型")
+	}
+	prompt := strings.TrimSpace(req.Prompt)
+	if prompt == "" {
+		prompt = "What model are you? Answer briefly."
+	}
+
+	c, resolved, conn, session, err := s.prepareConnectorCall(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	key, err := conn.RevealAPIKey(ctx, resolved, session, keyID)
+	if err != nil {
+		return nil, err
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, errors.New("上游未返回完整密钥")
+	}
+
+	result := testOpenAICompatibleKey(ctx, resolved, key, model, prompt)
+	if result.OK {
+		_ = s.Channels.SetLastError(c.ID, "")
+	}
+	return result, nil
+}
+
+func testOpenAICompatibleKey(ctx context.Context, ch *connector.Channel, key, model, prompt string) *connector.APIKeyTestResult {
+	result := &connector.APIKeyTestResult{Model: model}
+	body, _ := json.Marshal(map[string]any{
+		"model": model,
+		"messages": []map[string]string{{"role": "user", "content": prompt}},
+		"stream": false,
+		"max_tokens": 16,
+	})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(ch.SiteURL, "/")+"/v1/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if proxy := strings.TrimSpace(ch.ProxyURL); proxy != "" {
+		if u, err := url.Parse(proxy); err == nil {
+			transport.Proxy = http.ProxyURL(u)
+		}
+	}
+	client := &http.Client{Transport: transport, Timeout: 60 * time.Second}
+	started := time.Now()
+	resp, err := client.Do(req)
+	result.LatencyMS = time.Since(started).Milliseconds()
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	defer resp.Body.Close()
+	result.Status = resp.StatusCode
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	result.Content = extractChatCompletionContent(respBody)
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		result.OK = true
+		return result
+	}
+	result.Error = extractAPIError(respBody)
+	if result.Error == "" {
+		result.Error = http.StatusText(resp.StatusCode)
+	}
+	return result
+}
+
+func extractChatCompletionContent(body []byte) string {
+	var raw struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+			Text string `json:"text"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal(body, &raw) != nil || len(raw.Choices) == 0 {
+		return ""
+	}
+	if content := strings.TrimSpace(raw.Choices[0].Message.Content); content != "" {
+		return content
+	}
+	return strings.TrimSpace(raw.Choices[0].Text)
+}
+
+func extractAPIError(body []byte) string {
+	var raw struct {
+		Error   any    `json:"error"`
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &raw) != nil {
+		return strings.TrimSpace(string(body))
+	}
+	switch v := raw.Error.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case map[string]any:
+		if msg, _ := v["message"].(string); strings.TrimSpace(msg) != "" {
+			return strings.TrimSpace(msg)
+		}
+	}
+	return strings.TrimSpace(raw.Message)
 }
 
 func (s *Service) prepareConnectorCall(ctx context.Context, channelID uint) (*storage.Channel, *connector.Channel, connector.Connector, *connector.AuthSession, error) {

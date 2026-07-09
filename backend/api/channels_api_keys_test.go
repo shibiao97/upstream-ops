@@ -69,6 +69,10 @@ func (s *apiKeyChannelServiceStub) RevealAPIKey(ctx context.Context, channelID u
 	return s.revealed, nil
 }
 
+func (s *apiKeyChannelServiceStub) TestAPIKey(ctx context.Context, channelID uint, keyID int64, req connector.APIKeyTestRequest) (*connector.APIKeyTestResult, error) {
+	return &connector.APIKeyTestResult{OK: true, Status: http.StatusOK, Model: req.Model, Content: "ok"}, nil
+}
+
 func TestChannelAPIKeyEndpoints(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -160,6 +164,23 @@ func TestChannelAPIKeyEndpoints(t *testing.T) {
 	}
 	if revealResp.Data.Key != "sk-full" {
 		t.Fatalf("revealed key = %q", revealResp.Data.Key)
+	}
+
+	testReq := httptest.NewRequest(http.MethodPost, "/api/channels/1/api-keys/11/test", strings.NewReader(`{"model":"gpt-test"}`))
+	testReq.Header.Set("Content-Type", "application/json")
+	testRec := httptest.NewRecorder()
+	r.ServeHTTP(testRec, testReq)
+	if testRec.Code != http.StatusOK {
+		t.Fatalf("test status = %d body = %s", testRec.Code, testRec.Body.String())
+	}
+	var testResp struct {
+		Data connector.APIKeyTestResult `json:"data"`
+	}
+	if err := json.Unmarshal(testRec.Body.Bytes(), &testResp); err != nil {
+		t.Fatalf("decode test: %v", err)
+	}
+	if !testResp.Data.OK || testResp.Data.Model != "gpt-test" {
+		t.Fatalf("test response = %#v", testResp.Data)
 	}
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/channels/1/api-keys/11", nil)
