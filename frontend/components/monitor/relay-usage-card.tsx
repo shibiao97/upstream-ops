@@ -114,7 +114,7 @@ export function RelayUsageCard() {
 
   return (
     <>
-      <Card className="flex min-h-0 flex-col overflow-hidden border border-border shadow-none lg:h-80">
+      <Card className="flex min-h-0 flex-col overflow-hidden border border-border shadow-none lg:h-[22rem]">
         <CardHeader className="flex shrink-0 flex-row items-center justify-between px-4 pb-2 sm:px-6">
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
             <Server className="size-4 text-brand" />
@@ -138,7 +138,7 @@ export function RelayUsageCard() {
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="grid grid-cols-2 gap-3">
                 <Metric label="今日用户消费" value={money(data?.actual_cost)} tone="brand" />
-                <Metric label="今日成本" value={money(data?.cost)} tone="warning" />
+                <Metric label="今日账号成本" value={money(data?.cost)} tone="warning" />
               </div>
               <div className="mt-2 rounded-lg border border-border p-2.5 text-xs">
                 <div className="flex items-center justify-between gap-2">
@@ -292,14 +292,14 @@ function RelayConfigDialog({ open, onOpenChange, config }: { open: boolean; onOp
               <div className="space-y-1.5">
                 <Label htmlFor="relay-interval">自动拉取间隔（分钟）</Label>
                 <Input id="relay-interval" type="number" min="1" max="1440" step="1" value={form.pull_interval_minutes} onChange={(e) => setForm({ ...form, pull_interval_minutes: e.target.value })} disabled={submitting || testing} />
-                <p className="text-[11px] text-muted-foreground">{"首页卡片按这个间隔自动刷新今日消费和今日成本。"}</p>
+                <p className="text-[11px] text-muted-foreground">{"首页卡片按这个间隔自动刷新今日用户消费和今日账号成本。"}</p>
               </div>
 
               <div className="rounded-lg border border-border">
                 <div className="flex items-center justify-between border-b border-border px-3 py-2">
                   <div>
-                    <p className="text-sm font-medium">{"账号成本倍率"}</p>
-                    <p className="text-[11px] text-muted-foreground">{"测试成功后自动拉取账号；成本 = 消费 / 倍率。"}</p>
+                    <p className="text-sm font-medium">{"账号成本倍率兜底"}</p>
+                    <p className="text-[11px] text-muted-foreground">{"新日志优先用 SubApi 返回的账号成本；这里仅兜底旧数据。"}</p>
                   </div>
                   <Button type="button" size="sm" variant="outline" onClick={handleTest} disabled={testing || submitting}>
                     {testing ? "测试中…" : "测试并拉取"}
@@ -383,11 +383,17 @@ function RelayUsersDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           <DialogTitle>{"用户消费明细"}</DialogTitle>
           <DialogDescription>{`当前只统计 ${date}，默认按用户实际消费从大到小排序。`}</DialogDescription>
         </DialogHeader>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Input type="date" className="w-44" value={date} onChange={(e) => { setDate(e.target.value); setPage(1) }} />
-          <div className="flex gap-4 text-xs text-muted-foreground">
-            <span>{"所选日期实际消费 "}<b className="text-foreground">{money(data?.actual_cost)}</b></span>
-            <span>{"所选日期成本 "}<b className="text-foreground">{money(data?.cost)}</b></span>
+        <div className="grid gap-3 sm:grid-cols-[220px_1fr] sm:items-center">
+          <Input type="date" className="w-full" value={date} onChange={(e) => { setDate(e.target.value); setPage(1) }} />
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="rounded-lg border border-border px-3 py-2 text-right">
+              <p className="text-muted-foreground">{"用户实际消费（含分组倍率）"}</p>
+              <p className="mt-1 font-semibold tabular-nums text-brand">{money(data?.actual_cost)}</p>
+            </div>
+            <div className="rounded-lg border border-border px-3 py-2 text-right">
+              <p className="text-muted-foreground">{"账号成本"}</p>
+              <p className="mt-1 font-semibold tabular-nums text-warning">{money(data?.cost)}</p>
+            </div>
           </div>
         </div>
         <ScrollArea className="max-h-[58vh] rounded-md border border-border">
@@ -395,8 +401,8 @@ function RelayUsersDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
             <span />
             <span>{"用户 / 主要账号"}</span>
             <span className="text-right">{"请求数"}</span>
-            <span className="text-right">{"实际消费"}</span>
-            <span className="text-right">{"成本"}</span>
+            <span className="text-right">{"用户实际消费"}</span>
+            <span className="text-right">{"账号成本"}</span>
           </div>
           {loading && !data ? <p className="px-4 py-6 text-sm text-muted-foreground">{"加载中…"}</p> : null}
           {!loading && (data?.items.length ?? 0) === 0 ? <p className="px-4 py-6 text-sm text-muted-foreground">{"暂无消费记录"}</p> : null}
@@ -423,8 +429,8 @@ function RelayUsersDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                     <div className="mt-3 rounded-lg bg-muted/30">
                       <div className="grid grid-cols-[1fr_90px_90px] gap-2 border-b border-border/60 px-3 py-2 text-[11px] text-muted-foreground sm:grid-cols-[1fr_90px_90px_90px]">
                         <span>{"账号/渠道"}</span>
-                        <span className="text-right">{"实际消费"}</span>
-                        <span className="text-right">{"成本"}</span>
+                        <span className="text-right">{"用户实际消费"}</span>
+                        <span className="text-right">{"账号成本"}</span>
                         <span className="hidden text-right sm:block">{"倍率"}</span>
                       </div>
                       {row.accounts.map((account) => (

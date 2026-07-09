@@ -113,12 +113,14 @@ type AccountUsageDetail struct {
 }
 
 type usageLog struct {
-	UserID       int64
-	Username     string
-	AccountID    int64
-	AccountName  string
-	ActualCost   float64
-	RequestCount int
+	UserID                int64
+	Username              string
+	AccountID             int64
+	AccountName           string
+	ActualCost            float64
+	AccountCost           float64
+	AccountRateMultiplier float64
+	RequestCount          int
 }
 
 type sub2Resp struct {
@@ -213,18 +215,16 @@ func (s *Service) Summary(ctx context.Context, date string) (*Summary, error) {
 		_ = s.Repo.SetCheckResult(cfg.ID, err.Error())
 		return nil, err
 	}
-	mults, err := s.multiplierMap(cfg.ID)
-	if err != nil {
-		return nil, err
-	}
 	for _, log := range logs {
-		mult := multiplierFor(mults, log.AccountID, 0)
 		out.ActualCost += log.ActualCost
-		out.Cost += log.ActualCost * mult
+		out.Cost += log.AccountCost
 		out.RequestCount += log.RequestCount
 	}
 	if stats != nil && stats.ActualCost > 0 {
 		out.ActualCost = stats.ActualCost
+	}
+	if stats != nil && stats.Cost > 0 {
+		out.Cost = stats.Cost
 	}
 	if stats != nil && stats.RequestCount > 0 {
 		out.RequestCount = stats.RequestCount
@@ -259,8 +259,9 @@ func (s *Service) fetchUsageStats(ctx context.Context, cfg *storage.RelayConfig,
 		return nil, err
 	}
 	return &Summary{
-		ActualCost:   floatValue(data, "actual_cost", "total_actual_cost", "today_actual_cost", "cost"),
-		RequestCount: int(anyInt(data["request_count"]) + anyInt(data["total_requests"])),
+		ActualCost:   floatValue(data, "total_actual_cost", "actual_cost", "today_actual_cost"),
+		Cost:         floatValue(data, "total_account_cost", "account_cost", "today_account_cost"),
+		RequestCount: int(anyInt(data["total_requests"]) + anyInt(data["request_count"])),
 	}, nil
 }
 
@@ -427,17 +428,21 @@ func (s *Service) fetchUsageLogs(ctx context.Context, cfg *storage.RelayConfig, 
 		}
 		items := extractItems(wrapped.Data)
 		for _, item := range items {
-			actual := floatValue(item, "actual_cost", "actualCost", "cost")
+			actual := floatValue(item, "actual_cost", "actualCost")
 			if actual <= 0 {
 				continue
 			}
+			accountCost := usageAccountCost(item)
+			accountRateMultiplier := usageAccountRateMultiplier(item)
 			out = append(out, usageLog{
-				UserID:       intValue(item, "user_id", "userId"),
-				Username:     firstString(item, "username", "user_email", "email", "user_name"),
-				AccountID:    intValue(item, "account_id", "accountId", "channel_id"),
-				AccountName:  firstString(item, "account_name", "account", "channel_name"),
-				ActualCost:   actual,
-				RequestCount: 1,
+				UserID:                intValue(item, "user_id", "userId"),
+				Username:              firstString(item, "username", "user_email", "email", "user_name"),
+				AccountID:             intValue(item, "account_id", "accountId", "channel_id"),
+				AccountName:           firstString(item, "account_name", "account", "channel_name", "name"),
+				ActualCost:            actual,
+				AccountCost:           accountCost,
+				AccountRateMultiplier: accountRateMultiplier,
+				RequestCount:          1,
 			})
 		}
 		if len(items) < defaultPageSize {
@@ -445,6 +450,22 @@ func (s *Service) fetchUsageLogs(ctx context.Context, cfg *storage.RelayConfig, 
 		}
 	}
 	return out, nil
+}
+
+func usageAccountCost(item map[string]any) float64 {
+	base := floatValue(item, "account_stats_cost", "accountStatsCost")
+	if base <= 0 {
+		base = floatValue(item, "total_cost", "totalCost", "cost")
+	}
+	return base * usageAccountRateMultiplier(item)
+}
+
+func usageAccountRateMultiplier(item map[string]any) float64 {
+	mult := floatValue(item, "account_rate_multiplier", "accountRateMultiplier")
+	if mult <= 0 {
+		return 1
+	}
+	return mult
 }
 
 func (s *Service) doJSON(ctx context.Context, method, url, token string, body any, out any) error {
@@ -572,8 +593,14 @@ func aggregateUsers(logs []usageLog, multipliers map[int64]float64) []UserUsage 
 			users[key] = user
 			accountMaps[key] = map[int64]*AccountUsageDetail{}
 		}
-		mult := multiplierFor(multipliers, log.AccountID, 0)
-		cost := log.ActualCost * mult
+		mult := log.AccountRateMultiplier
+		if mult <= 0 {
+			mult = multiplierFor(multipliers, log.AccountID, 0)
+		}
+		cost := log.AccountCost
+		if cost <= 0 {
+			cost = log.ActualCost * mult
+		}
 		user.ActualCost += log.ActualCost
 		user.Cost += cost
 		user.RequestCount += log.RequestCount

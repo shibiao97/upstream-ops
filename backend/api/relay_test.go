@@ -94,12 +94,12 @@ func TestRelayUsersAggregateAndSortByActualCost(t *testing.T) {
 				t.Errorf("usage start_date = %q, want 2026-07-09", got)
 			}
 			_, _ = w.Write([]byte(`{"code":0,"data":{"items":[
-				{"user_id":10,"username":"u10","account_id":1,"account_name":"acc-a","actual_cost":6},
-				{"user_id":20,"username":"u20","account_id":2,"account_name":"acc-b","actual_cost":10},
-				{"user_id":10,"username":"u10","account_id":2,"account_name":"acc-b","actual_cost":2}
+				{"user_id":10,"username":"u10","account_id":1,"account_name":"acc-a","actual_cost":6,"total_cost":10,"account_rate_multiplier":0.1},
+				{"user_id":20,"username":"u20","account_id":2,"account_name":"acc-b","actual_cost":10,"total_cost":20,"account_rate_multiplier":0.1},
+				{"user_id":10,"username":"u10","account_id":2,"account_name":"acc-b","actual_cost":2,"total_cost":99,"account_stats_cost":5,"account_rate_multiplier":0.2}
 			]}}`))
 		case "/api/v1/admin/usage/stats":
-			_, _ = w.Write([]byte(`{"code":0,"data":{"actual_cost":18,"request_count":3}}`))
+			_, _ = w.Write([]byte(`{"code":0,"data":{"total_actual_cost":18,"total_account_cost":4,"total_requests":3}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -130,8 +130,8 @@ func TestRelayUsersAggregateAndSortByActualCost(t *testing.T) {
 	if err := json.Unmarshal(summaryRec.Body.Bytes(), &summaryResp); err != nil {
 		t.Fatalf("decode summary: %v", err)
 	}
-	if summaryResp.Data.ActualCost != 18 || summaryResp.Data.Cost != 3.0 {
-		t.Fatalf("summary = %#v, want actual 18 cost 3", summaryResp.Data)
+	if summaryResp.Data.ActualCost != 18 || summaryResp.Data.Cost != 4.0 {
+		t.Fatalf("summary = %#v, want actual 18 cost 4", summaryResp.Data)
 	}
 
 	usersReq := httptest.NewRequest(http.MethodGet, "/api/relay/users?date=2026-07-09&page=1&page_size=20", nil)
@@ -149,10 +149,10 @@ func TestRelayUsersAggregateAndSortByActualCost(t *testing.T) {
 	if len(usersResp.Data.Items) != 2 || usersResp.Data.Items[0].Username != "u20" || usersResp.Data.Items[0].ActualCost != 10 {
 		t.Fatalf("users not sorted by actual cost desc: %#v", usersResp.Data.Items)
 	}
-	if usersResp.Data.ActualCost != 18 || usersResp.Data.Cost != 3.0 {
-		t.Fatalf("users totals = %#v, want actual 18 cost 3", usersResp.Data)
+	if usersResp.Data.ActualCost != 18 || usersResp.Data.Cost != 4.0 {
+		t.Fatalf("users totals = %#v, want actual 18 cost 4", usersResp.Data)
 	}
-	if usersResp.Data.Items[1].Cost != 1.0 || usersResp.Data.Items[1].MainAccount != "acc-a" {
+	if usersResp.Data.Items[1].Cost != 2.0 || usersResp.Data.Items[1].MainAccount != "acc-a" {
 		t.Fatalf("user aggregate = %#v", usersResp.Data.Items[1])
 	}
 }
