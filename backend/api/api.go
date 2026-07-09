@@ -122,6 +122,10 @@ func registerFrontend(r *gin.Engine, dist fs.FS) {
 
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
+		path = strings.TrimPrefix(path, "/upstream-ops")
+		if path == "" {
+			path = "/"
+		}
 
 		// 永远不让 SPA fallback 覆盖 API / 健康检查路径。
 		if strings.HasPrefix(path, "/api/") || path == "/healthz" {
@@ -136,6 +140,8 @@ func registerFrontend(r *gin.Engine, dist fs.FS) {
 		}
 		if _, err := fs.Stat(dist, clean); err != nil {
 			c.Request.URL.Path = "/"
+		} else {
+			c.Request.URL.Path = path
 		}
 		fileServer.ServeHTTP(c.Writer, c.Request)
 	})
