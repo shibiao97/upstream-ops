@@ -82,6 +82,7 @@ interface KeyForm {
 const PAGE_SIZE = 10
 const TEST_MODELS = ["GPT-5.4", "gpt-4o", "gpt-4o-mini", "claude-sonnet-4-20250514", "gemini-2.5-pro"]
 const CUSTOM_MODEL = "__custom"
+const AUTO_PROVIDER = "auto"
 
 const emptyForm: KeyForm = {
   name: "",
@@ -210,6 +211,11 @@ function maskKey(key: string) {
   return `${key.slice(0, 8)}…${key.slice(-6)}`
 }
 
+function modelOptionsForKey(key: ChannelAPIKey | null) {
+  const limits = key?.model_limits_enabled ? splitLines(key.model_limits ?? "") : []
+  return Array.from(new Set([...limits, ...TEST_MODELS]))
+}
+
 async function copyText(text: string, label = "已复制") {
   const writeClipboard = navigator.clipboard?.writeText?.bind(navigator.clipboard)
   if (writeClipboard) {
@@ -260,6 +266,7 @@ export function ChannelAPIKeysDialog({
   const [revealedKeys, setRevealedKeys] = useState<Record<number, string>>({})
   const [testingKey, setTestingKey] = useState<ChannelAPIKey | null>(null)
   const [testModel, setTestModel] = useState(TEST_MODELS[0])
+  const [testProvider, setTestProvider] = useState(AUTO_PROVIDER)
   const [customModel, setCustomModel] = useState("")
   const [testPrompt, setTestPrompt] = useState("What model are you? Answer briefly.")
   const [testResult, setTestResult] = useState<ChannelAPIKeyTestResult | null>(null)
@@ -489,9 +496,11 @@ export function ChannelAPIKeysDialog({
   }
 
   function openTest(key: ChannelAPIKey) {
+    const models = modelOptionsForKey(key)
     setTestingKey(key)
     setTestResult(null)
-    setTestModel(TEST_MODELS[0])
+    setTestModel(models[0] ?? TEST_MODELS[0])
+    setTestProvider(AUTO_PROVIDER)
     setCustomModel("")
     setTestPrompt("What model are you? Answer briefly.")
   }
@@ -508,14 +517,14 @@ export function ChannelAPIKeysDialog({
     try {
       const res = await apiFetch<ChannelAPIKeyTestResult>(`/channels/${channel.id}/api-keys/${testingKey.id}/test`, {
         method: "POST",
-        body: JSON.stringify({ model, prompt: testPrompt }),
+        body: JSON.stringify({ model, provider: testProvider === AUTO_PROVIDER ? undefined : testProvider, prompt: testPrompt }),
       })
       setTestResult(res)
       if (res.ok) toast.success("密钥可用")
       else toast.error(res.error || "密钥测试失败")
     } catch (e) {
       const err = e as Error
-      setTestResult({ ok: false, status: 0, latency_ms: 0, model, error: err.message || "测试失败" })
+      setTestResult({ ok: false, status: 0, latency_ms: 0, model, provider: testProvider, error: err.message || "测试失败" })
       toast.error(err.message || "测试失败")
     } finally {
       setTesting(false)
@@ -858,7 +867,7 @@ export function ChannelAPIKeysDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TEST_MODELS.map((model) => (
+                  {modelOptionsForKey(testingKey).map((model) => (
                     <SelectItem key={model} value={model}>{model}</SelectItem>
                   ))}
                   <SelectItem value={CUSTOM_MODEL}>自定义模型</SelectItem>
@@ -875,6 +884,18 @@ export function ChannelAPIKeysDialog({
                 />
               </Field>
             ) : null}
+            <Field label="请求协议">
+              <Select value={testProvider} onValueChange={setTestProvider} disabled={testing}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={AUTO_PROVIDER}>自动识别</SelectItem>
+                  <SelectItem value="openai">OpenAI-compatible</SelectItem>
+                  <SelectItem value="anthropic">Anthropic Messages</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
             <Field label="提示词">
               <Input
                 value={testPrompt}
@@ -892,6 +913,7 @@ export function ChannelAPIKeysDialog({
                 <div className="space-y-2">
                   <p className={testResult.ok ? "text-emerald-400" : "text-red-400"}>
                     {testResult.ok ? "密钥可用" : "密钥不可用"}
+                    {testResult.provider ? ` · ${testResult.provider}` : ""}
                     {testResult.status ? ` · HTTP ${testResult.status}` : ""}
                     {testResult.latency_ms ? ` · ${testResult.latency_ms}ms` : ""}
                   </p>

@@ -488,6 +488,7 @@ export interface ChannelAPIKeyTestResult {
   status: number
   latency_ms: number
   model: string
+  provider: string
   content?: string
   error?: string
 }

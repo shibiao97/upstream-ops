@@ -276,10 +276,11 @@ type APIKey struct {
 	Usage7d            float64    `json:"usage_7d"`
 }
 
-// APIKeyTestRequest describes a lightweight OpenAI-compatible request used to verify a generated API key.
+// APIKeyTestRequest describes a lightweight model request used to verify a generated API key.
 type APIKeyTestRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt,omitempty"`
+	Model    string `json:"model"`
+	Provider string `json:"provider,omitempty"`
+	Prompt   string `json:"prompt,omitempty"`
 }
 
 // APIKeyTestResult is returned even when the upstream rejects the key, so the UI can show the exact failure.
@@ -288,6 +289,7 @@ type APIKeyTestResult struct {
 	Status    int    `json:"status"`
 	LatencyMS int64  `json:"latency_ms"`
 	Model     string `json:"model"`
+	Provider  string `json:"provider"`
 	Content   string `json:"content,omitempty"`
 	Error     string `json:"error,omitempty"`
 }

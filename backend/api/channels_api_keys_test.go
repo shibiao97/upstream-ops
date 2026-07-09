@@ -70,7 +70,7 @@ func (s *apiKeyChannelServiceStub) RevealAPIKey(ctx context.Context, channelID u
 }
 
 func (s *apiKeyChannelServiceStub) TestAPIKey(ctx context.Context, channelID uint, keyID int64, req connector.APIKeyTestRequest) (*connector.APIKeyTestResult, error) {
-	return &connector.APIKeyTestResult{OK: true, Status: http.StatusOK, Model: req.Model, Content: "ok"}, nil
+	return &connector.APIKeyTestResult{OK: true, Status: http.StatusOK, Model: req.Model, Provider: req.Provider, Content: "ok"}, nil
 }
 
 func TestChannelAPIKeyEndpoints(t *testing.T) {

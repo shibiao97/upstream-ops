@@ -1169,6 +1169,7 @@ func (s *Service) TestAPIKey(ctx context.Context, channelID uint, keyID int64, r
 	if model == "" {
 		return nil, errors.New("请选择测试模型")
 	}
+	provider := normalizeAPIKeyTestProvider(req.Provider, model)
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
 		prompt = "What model are you? Answer briefly."
@@ -1187,23 +1188,63 @@ func (s *Service) TestAPIKey(ctx context.Context, channelID uint, keyID int64, r
 		return nil, errors.New("上游未返回完整密钥")
 	}
 
-	result := testOpenAICompatibleKey(ctx, resolved, key, model, prompt)
+	result := testAPIKey(ctx, resolved, key, provider, model, prompt)
 	if result.OK {
 		_ = s.Channels.SetLastError(c.ID, "")
 	}
 	return result, nil
 }
 
+func normalizeAPIKeyTestProvider(provider, model string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "anthropic", "openai":
+		return strings.ToLower(strings.TrimSpace(provider))
+	case "claude":
+		return "anthropic"
+	case "openai-compatible":
+		return "openai"
+	}
+	lowerModel := strings.ToLower(strings.TrimSpace(model))
+	if strings.HasPrefix(lowerModel, "claude") || strings.Contains(lowerModel, "anthropic") {
+		return "anthropic"
+	}
+	return "openai"
+}
+
+func testAPIKey(ctx context.Context, ch *connector.Channel, key, provider, model, prompt string) *connector.APIKeyTestResult {
+	if provider == "anthropic" {
+		return testAnthropicCompatibleKey(ctx, ch, key, model, prompt)
+	}
+	return testOpenAICompatibleKey(ctx, ch, key, model, prompt)
+}
+
 func testOpenAICompatibleKey(ctx context.Context, ch *connector.Channel, key, model, prompt string) *connector.APIKeyTestResult {
-	result := &connector.APIKeyTestResult{Model: model}
+	result := &connector.APIKeyTestResult{Model: model, Provider: "openai"}
 	body, _ := json.Marshal(map[string]any{
 		"model": model,
 		"messages": []map[string]string{{"role": "user", "content": prompt}},
 		"stream": false,
 		"max_tokens": 16,
 	})
+	return postAPIKeyTest(ctx, ch, key, "/v1/chat/completions", body, result, nil)
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(ch.SiteURL, "/")+"/v1/chat/completions", bytes.NewReader(body))
+func testAnthropicCompatibleKey(ctx context.Context, ch *connector.Channel, key, model, prompt string) *connector.APIKeyTestResult {
+	result := &connector.APIKeyTestResult{Model: model, Provider: "anthropic"}
+	body, _ := json.Marshal(map[string]any{
+		"model": model,
+		"messages": []map[string]string{{"role": "user", "content": prompt}},
+		"max_tokens": 16,
+	})
+	return postAPIKeyTest(ctx, ch, key, "/v1/messages", body, result, func(req *http.Request) {
+		req.Header.Del("Authorization")
+		req.Header.Set("x-api-key", key)
+		req.Header.Set("anthropic-version", "2023-06-01")
+	})
+}
+
+func postAPIKeyTest(ctx context.Context, ch *connector.Channel, key, path string, body []byte, result *connector.APIKeyTestResult, setup func(*http.Request)) *connector.APIKeyTestResult {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(ch.SiteURL, "/")+path, bytes.NewReader(body))
 	if err != nil {
 		result.Error = err.Error()
 		return result
@@ -1211,6 +1252,9 @@ func testOpenAICompatibleKey(ctx context.Context, ch *connector.Channel, key, mo
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	if setup != nil {
+		setup(req)
+	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if proxy := strings.TrimSpace(ch.ProxyURL); proxy != "" {
@@ -1229,7 +1273,7 @@ func testOpenAICompatibleKey(ctx context.Context, ch *connector.Channel, key, mo
 	defer resp.Body.Close()
 	result.Status = resp.StatusCode
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	result.Content = extractChatCompletionContent(respBody)
+	result.Content = extractAPIKeyTestContent(respBody)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		result.OK = true
 		return result
@@ -1241,7 +1285,7 @@ func testOpenAICompatibleKey(ctx context.Context, ch *connector.Channel, key, mo
 	return result
 }
 
-func extractChatCompletionContent(body []byte) string {
+func extractAPIKeyTestContent(body []byte) string {
 	var raw struct {
 		Choices []struct {
 			Message struct {
@@ -1249,14 +1293,25 @@ func extractChatCompletionContent(body []byte) string {
 			} `json:"message"`
 			Text string `json:"text"`
 		} `json:"choices"`
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
 	}
-	if json.Unmarshal(body, &raw) != nil || len(raw.Choices) == 0 {
+	if json.Unmarshal(body, &raw) != nil {
 		return ""
 	}
-	if content := strings.TrimSpace(raw.Choices[0].Message.Content); content != "" {
-		return content
+	if len(raw.Choices) > 0 {
+		if content := strings.TrimSpace(raw.Choices[0].Message.Content); content != "" {
+			return content
+		}
+		if text := strings.TrimSpace(raw.Choices[0].Text); text != "" {
+			return text
+		}
 	}
-	return strings.TrimSpace(raw.Choices[0].Text)
+	if len(raw.Content) > 0 {
+		return strings.TrimSpace(raw.Content[0].Text)
+	}
+	return ""
 }
 
 func extractAPIError(body []byte) string {
