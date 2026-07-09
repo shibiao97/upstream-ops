@@ -94,7 +94,7 @@ func TestRelayUsersAggregateAndSortByActualCost(t *testing.T) {
 				t.Errorf("usage start_date = %q, want 2026-07-09", got)
 			}
 			_, _ = w.Write([]byte(`{"code":0,"data":{"items":[
-				{"user_id":1,"username":"admin@example.com","account_id":1,"account_name":"acc-a","actual_cost":100,"total_cost":100,"account_rate_multiplier":1},
+				{"user_id":1,"username":"管理员","user":{"email":"admin@example.com"},"account_id":1,"account_name":"acc-a","actual_cost":100,"total_cost":100,"account_rate_multiplier":1},
 				{"user_id":10,"username":"u10","account_id":1,"account_name":"acc-a","actual_cost":6,"total_cost":10,"account_rate_multiplier":0.1},
 				{"user_id":20,"username":"u20","account_id":2,"account_name":"acc-b","actual_cost":10,"total_cost":20,"account_rate_multiplier":0.1},
 				{"user_id":10,"username":"u10","account_id":2,"account_name":"acc-b","actual_cost":2,"total_cost":99,"account_stats_cost":5,"account_rate_multiplier":0.2}

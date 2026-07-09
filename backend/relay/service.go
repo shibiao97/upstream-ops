@@ -115,6 +115,7 @@ type AccountUsageDetail struct {
 type usageLog struct {
 	UserID                int64
 	Username              string
+	UserEmail             string
 	AccountID             int64
 	AccountName           string
 	ActualCost            float64
@@ -428,7 +429,8 @@ func (s *Service) fetchUsageLogs(ctx context.Context, cfg *storage.RelayConfig, 
 			accountRateMultiplier := usageAccountRateMultiplier(item)
 			out = append(out, usageLog{
 				UserID:                intValue(item, "user_id", "userId"),
-				Username:              firstString(item, "username", "user_email", "email", "user_name"),
+				Username:              firstString(item, "username", "user_name", "name", "email", "user_email"),
+				UserEmail:             firstString(item, "email", "user_email"),
 				AccountID:             intValue(item, "account_id", "accountId", "channel_id"),
 				AccountName:           firstString(item, "account_name", "account", "channel_name", "name"),
 				ActualCost:            actual,
@@ -574,6 +576,10 @@ func (s *Service) multiplierMap(configID uint) (map[int64]float64, error) {
 	return out, nil
 }
 
+func sameEmail(value, email string) bool {
+	return strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(email))
+}
+
 func excludeAdminUsageLogs(logs []usageLog, adminEmail string) []usageLog {
 	admin := strings.ToLower(strings.TrimSpace(adminEmail))
 	if admin == "" || len(logs) == 0 {
@@ -581,7 +587,7 @@ func excludeAdminUsageLogs(logs []usageLog, adminEmail string) []usageLog {
 	}
 	out := logs[:0]
 	for _, log := range logs {
-		if strings.ToLower(strings.TrimSpace(log.Username)) == admin {
+		if sameEmail(log.Username, admin) || sameEmail(log.UserEmail, admin) {
 			continue
 		}
 		out = append(out, log)
