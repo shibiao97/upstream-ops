@@ -381,7 +381,7 @@ function RelayUsersDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
       <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>{"用户消费明细"}</DialogTitle>
-          <DialogDescription>{`当前只统计 ${date}，默认按用户实际消费从大到小排序。`}</DialogDescription>
+          <DialogDescription>{`当前只统计 ${date}，按所选日期的用户实际消费从大到小排序。`}</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-[220px_1fr] sm:items-center">
           <Input type="date" className="w-full" value={date} onChange={(e) => { setDate(e.target.value); setPage(1) }} />
@@ -391,7 +391,7 @@ function RelayUsersDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
               <p className="mt-1 font-semibold tabular-nums text-brand">{money(data?.actual_cost)}</p>
             </div>
             <div className="rounded-lg border border-border px-3 py-2 text-right">
-              <p className="text-muted-foreground">{"账号成本"}</p>
+              <p className="text-muted-foreground">{"账号成本合计"}</p>
               <p className="mt-1 font-semibold tabular-nums text-warning">{money(data?.cost)}</p>
             </div>
           </div>
@@ -402,7 +402,7 @@ function RelayUsersDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
             <span>{"用户 / 主要账号"}</span>
             <span className="text-right">{"请求数"}</span>
             <span className="text-right">{"用户实际消费"}</span>
-            <span className="text-right">{"账号成本"}</span>
+            <span className="text-right">{"账号成本合计"}</span>
           </div>
           {loading && !data ? <p className="px-4 py-6 text-sm text-muted-foreground">{"加载中…"}</p> : null}
           {!loading && (data?.items.length ?? 0) === 0 ? <p className="px-4 py-6 text-sm text-muted-foreground">{"暂无消费记录"}</p> : null}
@@ -429,8 +429,8 @@ function RelayUsersDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                     <div className="mt-3 rounded-lg bg-muted/30">
                       <div className="grid grid-cols-[1fr_90px_90px] gap-2 border-b border-border/60 px-3 py-2 text-[11px] text-muted-foreground sm:grid-cols-[1fr_90px_90px_90px]">
                         <span>{"账号/渠道"}</span>
-                        <span className="text-right">{"用户实际消费"}</span>
-                        <span className="text-right">{"账号成本"}</span>
+                        <span className="text-right">{"该账号实际消费"}</span>
+                        <span className="text-right">{"该账号成本"}</span>
                         <span className="hidden text-right sm:block">{"倍率"}</span>
                       </div>
                       {row.accounts.map((account) => (
