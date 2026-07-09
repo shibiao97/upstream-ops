@@ -146,6 +146,7 @@ type Sub2APITokenCredential struct {
 //   - token:    TokenCredential 必填（已序列化为 JSON 字符串）；Username 仅作展示备注
 type CreateInput struct {
 	Name                   string
+	OwnerUserID            uint
 	Type                   storage.ChannelType
 	SiteURL                string
 	Username               string
@@ -188,6 +189,7 @@ func (s *Service) Create(in CreateInput) (*storage.Channel, error) {
 	}
 	c := &storage.Channel{
 		Name:                   in.Name,
+		OwnerUserID:            in.OwnerUserID,
 		Type:                   in.Type,
 		SiteURL:                in.SiteURL,
 		Username:               in.Username,

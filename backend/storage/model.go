@@ -2,6 +2,34 @@ package storage
 
 import "time"
 
+type UserRole string
+
+const (
+	UserRoleSuperAdmin UserRole = "super_admin"
+	UserRoleUser       UserRole = "user"
+)
+
+type SystemUser struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	Username     string    `gorm:"size:256;not null;uniqueIndex" json:"username"`
+	PasswordHash string    `gorm:"size:256;not null" json:"-"`
+	Role         UserRole  `gorm:"size:32;not null;index" json:"role"`
+	Enabled      bool      `gorm:"not null;default:true" json:"enabled"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func (SystemUser) TableName() string { return "system_users" }
+
+type UserSchedulerSetting struct {
+	UserID     uint      `gorm:"primaryKey" json:"user_id"`
+	ConfigJSON string    `gorm:"type:text;not null" json:"config_json"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+func (UserSchedulerSetting) TableName() string { return "user_scheduler_settings" }
+
 // ChannelType 上游渠道类型。
 type ChannelType string
 
@@ -35,6 +63,7 @@ const (
 // 复用 PasswordCipher 而不新增 TokenCipher 是为了让现有的 GORM 行 / 加密路径 / 迁移流程零变动。
 type Channel struct {
 	ID                     uint           `gorm:"primaryKey" json:"id"`
+	OwnerUserID            uint           `gorm:"not null;default:0;index" json:"owner_user_id"`
 	Name                   string         `gorm:"size:128;not null;uniqueIndex" json:"name"`
 	Type                   ChannelType    `gorm:"size:32;not null;index" json:"type"`
 	SiteURL                string         `gorm:"size:512;not null" json:"site_url"`
@@ -229,6 +258,7 @@ const (
 // 非敏感数据，明文保存，方便 Dispatcher 直接读取过滤而不解密。
 type NotificationChannel struct {
 	ID            uint                    `gorm:"primaryKey" json:"id"`
+	OwnerUserID   uint                    `gorm:"not null;default:0;index" json:"owner_user_id"`
 	Name          string                  `gorm:"size:128;not null;uniqueIndex" json:"name"`
 	Type          NotificationChannelType `gorm:"size:32;not null;index" json:"type"`
 	ConfigCipher  string                  `gorm:"type:text;not null" json:"-"`

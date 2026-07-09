@@ -43,6 +43,8 @@ export type NotificationEvent =
 
 export interface Channel {
   id: number
+  owner_user_id: number
+  owner_username?: string
   name: string
   type: ChannelType
   site_url: string
@@ -139,6 +141,7 @@ export interface NotificationSubscription {
 
 export interface NotificationChannel {
   id: number
+  owner_user_id: number
   name: string
   type: NotificationChannelType
   enabled: boolean
@@ -146,6 +149,18 @@ export interface NotificationChannel {
   subscriptions?: string
   created_at: string
   updated_at: string
+}
+
+export type UserRole = "super_admin" | "user"
+
+export interface SystemUser {
+  id: number
+  user_id?: number
+  username: string
+  role: UserRole
+  enabled: boolean
+  created_at?: string
+  updated_at?: string
 }
 
 export interface NotificationLog {

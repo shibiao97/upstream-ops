@@ -11,6 +11,7 @@ import (
 	"github.com/bejix/upstream-ops/backend/config"
 	"github.com/bejix/upstream-ops/backend/notify"
 	"github.com/bejix/upstream-ops/backend/scheduler"
+	"github.com/bejix/upstream-ops/backend/storage"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,6 +24,7 @@ type Manager struct {
 	log              *slog.Logger
 	dispatcher       *notify.Dispatcher
 	channelSvc       *channel.Service
+	users            *storage.Users
 	schedulerFactory SchedulerFactory
 	auth             *auth.Service
 	scheduler        *scheduler.Scheduler
@@ -61,6 +63,12 @@ func New(
 	}
 }
 
+func (m *Manager) SetUsers(users *storage.Users) {
+	m.mu.Lock()
+	m.users = users
+	m.mu.Unlock()
+}
+
 func (m *Manager) ConfigPath() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -87,9 +95,10 @@ func (m *Manager) CurrentUpstream() config.UpstreamConfig {
 
 func (m *Manager) AuthMiddleware() gin.HandlerFunc {
 	whitelist := map[string]struct{}{
-		"/healthz":        {},
-		"/api/version":    {},
-		"/api/auth/login": {},
+		"/healthz":           {},
+		"/api/version":       {},
+		"/api/auth/login":    {},
+		"/api/auth/register": {},
 	}
 	return func(c *gin.Context) {
 		if _, ok := whitelist[c.FullPath()]; ok {
@@ -115,6 +124,7 @@ func (m *Manager) ApplyFromFile() (*ApplyResult, error) {
 	secret := m.securitySecret
 	dispatcher := m.dispatcher
 	channelSvc := m.channelSvc
+	users := m.users
 	factory := m.schedulerFactory
 	oldScheduler := m.scheduler
 	m.mu.RUnlock()
@@ -124,7 +134,7 @@ func (m *Manager) ApplyFromFile() (*ApplyResult, error) {
 		return nil, err
 	}
 
-	authSvc, err := buildAuth(cfg.Auth, secret)
+	authSvc, err := buildAuth(cfg.Auth, secret, users)
 	if err != nil {
 		return nil, err
 	}
@@ -178,20 +188,21 @@ func (m *Manager) ApplyFromFile() (*ApplyResult, error) {
 	}, nil
 }
 
-func buildAuth(cfg config.AuthConfig, securitySecret string) (*auth.Service, error) {
+func buildAuth(cfg config.AuthConfig, securitySecret string, users *storage.Users) (*auth.Service, error) {
 	if !cfg.Enabled {
 		return nil, nil
+	}
+	if users == nil {
+		return nil, fmt.Errorf("users repo is nil")
+	}
+	if _, err := users.BootstrapSuperAdmin(cfg.Password); err != nil {
+		return nil, fmt.Errorf("bootstrap super admin: %w", err)
 	}
 	tokenSecret := cfg.TokenSecret
 	if tokenSecret == "" {
 		tokenSecret = securitySecret
 	}
-	svc, err := auth.New(
-		cfg.Username,
-		cfg.Password,
-		tokenSecret,
-		time.Duration(cfg.SessionTTLHours)*time.Hour,
-	)
+	svc, err := auth.New(users, tokenSecret, time.Duration(cfg.SessionTTLHours)*time.Hour)
 	if err != nil {
 		return nil, fmt.Errorf("init auth: %w", err)
 	}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useTheme } from "next-themes"
-import { Activity, Github, Home, LogOut, RefreshCw, Sun, Moon, Settings, Upload } from "lucide-react"
+import { Activity, Bell, Github, Home, LogOut, RefreshCw, Sun, Moon, Settings, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -20,7 +20,7 @@ import { toast } from "sonner"
 export function MonitorHeader() {
   const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
-  const { username, authDisabled, logout } = useAuth()
+  const { username, authDisabled, isSuperAdmin, logout } = useAuth()
   const refresh = useTriggerRefresh()
   const channels = useChannels()
   const appVersion = useAppVersion()
@@ -187,8 +187,44 @@ export function MonitorHeader() {
             </TooltipContent>
           </Tooltip>
 
-          {/* settings */}
           <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => navigate("/notifications")}
+                className="size-8 border-border bg-background text-foreground hover:bg-muted"
+                aria-label="通知渠道"
+              >
+                <Bell className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              {"通知渠道"}
+            </TooltipContent>
+          </Tooltip>
+
+          {isSuperAdmin ? (
+            <Tooltip delayDuration={200}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => navigate("/users")}
+                  className="size-8 border-border bg-background text-foreground hover:bg-muted"
+                  aria-label="用户管理"
+                >
+                  <Users className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                {"用户管理"}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+
+          {/* settings */}
+          {isSuperAdmin ? <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <Button
                 variant="outline"
@@ -203,7 +239,7 @@ export function MonitorHeader() {
             <TooltipContent side="bottom" className="text-xs">
               {"系统设置"}
             </TooltipContent>
-          </Tooltip>
+          </Tooltip> : null}
 
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>

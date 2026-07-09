@@ -10,6 +10,13 @@ import (
 
 func registerRelay(g *gin.RouterGroup, d *Deps) {
 	gp := g.Group("/relay")
+	gp.Use(func(c *gin.Context) {
+		if !requireSuper(c, d) {
+			c.Abort()
+			return
+		}
+		c.Next()
+	})
 	gp.GET("/config", func(c *gin.Context) { relayConfig(c, d) })
 	gp.PUT("/config", func(c *gin.Context) { saveRelayConfig(c, d) })
 	gp.POST("/test", func(c *gin.Context) { testRelay(c, d) })

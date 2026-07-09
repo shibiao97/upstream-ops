@@ -60,29 +60,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Auth：默认禁用（AUTH_ENABLED=false），所有 /api/* 免 token；
-	// 显式开启时账号/密码必填，token secret 缺省回退到 AppSecret。
-	var authSvc *auth.Service
-	if cfg.Auth.Enabled {
-		tokenSecret := cfg.Auth.TokenSecret
-		if tokenSecret == "" {
-			tokenSecret = cfg.Security.AppSecret
-		}
-		authSvc, err = auth.New(
-			cfg.Auth.Username,
-			cfg.Auth.Password,
-			tokenSecret,
-			time.Duration(cfg.Auth.SessionTTLHours)*time.Hour,
-		)
-		if err != nil {
-			log.Error("init auth failed (set ADMIN_USERNAME / ADMIN_PASSWORD or AUTH_ENABLED=false)", "err", err)
-			os.Exit(1)
-		}
-		log.Info("auth enabled", "username", cfg.Auth.Username)
-	} else {
-		log.Warn("auth disabled — all /api/* endpoints are open; set AUTH_ENABLED=true for production exposure")
-	}
-
 	db, err := storage.Open(cfg.Database.ToStorageConfig())
 	if err != nil {
 		log.Error("open database failed", "err", err)
@@ -93,6 +70,37 @@ func main() {
 		os.Exit(1)
 	}
 
+	users := storage.NewUsers(db)
+	superAdmin, err := users.BootstrapSuperAdmin(cfg.Auth.Password)
+	if err != nil {
+		log.Error("bootstrap super admin failed", "err", err)
+		os.Exit(1)
+	}
+	if err := users.AssignLegacyOwners(superAdmin.ID); err != nil {
+		log.Error("assign legacy owners failed", "err", err)
+		os.Exit(1)
+	}
+
+	var authSvc *auth.Service
+	if cfg.Auth.Enabled {
+		if cfg.Auth.Password == "" {
+			log.Error("init auth failed (set ADMIN_PASSWORD or AUTH_ENABLED=false)")
+			os.Exit(1)
+		}
+		tokenSecret := cfg.Auth.TokenSecret
+		if tokenSecret == "" {
+			tokenSecret = cfg.Security.AppSecret
+		}
+		authSvc, err = auth.New(users, tokenSecret, time.Duration(cfg.Auth.SessionTTLHours)*time.Hour)
+		if err != nil {
+			log.Error("init auth failed (set ADMIN_PASSWORD or AUTH_ENABLED=false)", "err", err)
+			os.Exit(1)
+		}
+		log.Info("auth enabled", "username", storage.SuperAdminUsername)
+	} else {
+		log.Warn("auth disabled — all /api/* endpoints are open; set AUTH_ENABLED=true for production exposure")
+	}
+
 	channels := storage.NewChannels(db)
 	authSessions := storage.NewAuthSessions(db)
 	captchas := storage.NewCaptchas(db)
@@ -101,6 +109,7 @@ func main() {
 	rates := storage.NewRates(db)
 	monLogs := storage.NewMonitorLogs(db)
 	relays := storage.NewRelays(db)
+	userSchedulerSettings := storage.NewUserSchedulerSettings(db)
 
 	channelSvc := channel.NewService(channels, authSessions, captchas, rates, monLogs, cipher)
 	channelSvc.UpdateProxyConfig(cfg.Proxy)
@@ -122,7 +131,7 @@ func main() {
 	relaySvc := relay.NewService(relays, cipher)
 
 	schedulerFactory := func(scfg config.SchedulerConfig, pcfg config.ProxyConfig) *scheduler.Scheduler {
-		return scheduler.New(scfg, monitorSvc, monLogs, rates, notifies, announcements, captchas, cipher, pcfg, log)
+		return scheduler.NewForOwner(scfg, superAdmin.ID, monitorSvc, monLogs, rates, notifies, announcements, captchas, cipher, pcfg, log)
 	}
 	sch := schedulerFactory(cfg.Scheduler, cfg.Proxy)
 	if err := sch.Start(); err != nil {
@@ -130,6 +139,17 @@ func main() {
 		os.Exit(1)
 	}
 	defer sch.Stop()
+
+	userRunner := scheduler.NewUserRunner(
+		userSchedulerSettings,
+		users,
+		func(userID uint, scfg config.SchedulerConfig) *scheduler.Scheduler {
+			return scheduler.NewForOwner(scfg, userID, monitorSvc, monLogs, rates, notifies, announcements, nil, nil, cfg.Proxy, log)
+		},
+		log,
+	)
+	userRunner.Start()
+	defer userRunner.Stop()
 
 	runtimeMgr := runtimeconfig.New(
 		resolvedConfigPath,
@@ -143,6 +163,7 @@ func main() {
 		cfg.Upstream,
 		schedulerFactory,
 	)
+	runtimeMgr.SetUsers(users)
 
 	gin.SetMode(cfg.Server.Mode)
 	router := gin.New()
@@ -162,22 +183,24 @@ func main() {
 	}
 
 	api.Register(router, &api.Deps{
-		DB:            db,
-		Cipher:        cipher,
-		Runtime:       runtimeMgr,
-		Channels:      channels,
-		Sessions:      authSessions,
-		Captchas:      captchas,
-		Notifies:      notifies,
-		Announcements: announcements,
-		Rates:         rates,
-		MonLogs:       monLogs,
-		ChannelSvc:    channelSvc,
-		Monitor:       monitorSvc,
-		Dispatcher:    dispatcher,
-		Relay:         relaySvc,
-		Log:           log,
-		Frontend:      frontendFS,
+		DB:             db,
+		Cipher:         cipher,
+		Runtime:        runtimeMgr,
+		Users:          users,
+		UserSchedulers: userSchedulerSettings,
+		Channels:       channels,
+		Sessions:       authSessions,
+		Captchas:       captchas,
+		Notifies:       notifies,
+		Announcements:  announcements,
+		Rates:          rates,
+		MonLogs:        monLogs,
+		ChannelSvc:     channelSvc,
+		Monitor:        monitorSvc,
+		Dispatcher:     dispatcher,
+		Relay:          relaySvc,
+		Log:            log,
+		Frontend:       frontendFS,
 	})
 
 	srv := &http.Server{

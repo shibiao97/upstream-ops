@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/popover"
 import type { Channel, ChannelType, CredentialMode, RechargeMultiplierMode } from "@/lib/api-types"
 import { apiFetch } from "@/lib/api"
+import { useAuth } from "@/lib/auth-context"
 import { useTriggerRefresh } from "@/lib/refresh-context"
 import { useCaptchaConfigs } from "@/lib/queries"
 import { cn } from "@/lib/utils"
@@ -132,11 +133,12 @@ function buildTokenCredential(form: FormState): string {
 }
 
 export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDialogProps) {
+  const { isSuperAdmin } = useAuth()
   const [form, setForm] = useState<FormState>(() => initialState(channel))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const refresh = useTriggerRefresh()
-  const captchas = useCaptchaConfigs(open)
+  const captchas = useCaptchaConfigs(open && isSuperAdmin)
 
   // 打开 / 切换目标渠道时重置表单。
   useEffect(() => {
@@ -411,7 +413,7 @@ export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDi
           </div>
 
           {/* —— password 模式字段 —— */}
-          {!isTokenMode ? (
+          {!isTokenMode && isSuperAdmin ? (
             <>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">

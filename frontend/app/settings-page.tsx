@@ -31,7 +31,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { CaptchaFormDialog } from "@/components/monitor/captcha-form-dialog";
 import { NotificationFormDialog } from "@/components/monitor/notification-form-dialog";
+import { NotificationStatus } from "@/components/monitor/bottom-panels";
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { useTriggerRefresh } from "@/lib/refresh-context";
 import type {
   AppVersion,
@@ -40,6 +42,7 @@ import type {
   NotificationChannel,
   NotificationChannelType,
   SystemConfig,
+  SystemSchedulerConfig,
 } from "@/lib/api-types";
 import { decimal, money, relativeTime } from "@/lib/format";
 import {
@@ -65,6 +68,102 @@ interface ProxyTestResult {
 }
 
 export default function SettingsPage() {
+  const { isSuperAdmin } = useAuth();
+  if (!isSuperAdmin) return <UserSettingsPage />;
+  return <AdminSettingsPage />;
+}
+
+function UserSettingsPage() {
+  const [scheduler, setScheduler] = useState<SystemSchedulerConfig | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    apiFetch<{ scheduler: SystemSchedulerConfig }>("/settings/user-scheduler")
+      .then((res) =>
+        setScheduler(
+          res.scheduler ?? {
+            balanceCron: "",
+            rateCron: "",
+            concurrency: 1,
+            retention: {
+              cron: "",
+              monitorLogsDays: 0,
+              balanceSnapshotsDays: 0,
+              notificationLogsDays: 0,
+              announcementsDays: 0,
+            },
+          },
+        ),
+      )
+      .catch((e) => toast.error(e instanceof Error ? e.message : "加载个人调度失败"));
+  }, []);
+
+  async function save() {
+    if (!scheduler) return;
+    setSaving(true);
+    try {
+      await apiFetch("/settings/user-scheduler", {
+        method: "PUT",
+        body: JSON.stringify({ scheduler }),
+      });
+      toast.success("个人调度已保存，下一轮轮询生效");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <header>
+        <h1 className="text-lg font-semibold text-foreground">个人设置</h1>
+        <p className="text-xs text-muted-foreground">
+          调度与保留策略只影响你自己的渠道；通知渠道也只对你自己的渠道生效。
+        </p>
+      </header>
+      {scheduler ? (
+        <SectionCard
+          icon={<Clock3 className="size-4 text-sky-600" />}
+          title="调度与保留策略"
+          description="这些任务只扫描和清理你自己的渠道数据。"
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="余额采集 Cron" description="留空则不自动采集余额。">
+              <Input value={scheduler.balanceCron} onChange={(e) => setScheduler({ ...scheduler, balanceCron: e.target.value })} />
+            </Field>
+            <Field label="倍率采集 Cron" description="留空则不自动采集倍率。">
+              <Input value={scheduler.rateCron} onChange={(e) => setScheduler({ ...scheduler, rateCron: e.target.value })} />
+            </Field>
+            <Field label="清理任务 Cron" description="留空则不自动清理历史。">
+              <Input value={scheduler.retention.cron} onChange={(e) => setScheduler({ ...scheduler, retention: { ...scheduler.retention, cron: e.target.value } })} />
+            </Field>
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-4">
+            <Field label="监控日志保留天数">
+              <Input type="number" value={String(scheduler.retention.monitorLogsDays)} onChange={(e) => setScheduler({ ...scheduler, retention: { ...scheduler.retention, monitorLogsDays: num(e.target.value) } })} />
+            </Field>
+            <Field label="余额快照保留天数">
+              <Input type="number" value={String(scheduler.retention.balanceSnapshotsDays)} onChange={(e) => setScheduler({ ...scheduler, retention: { ...scheduler.retention, balanceSnapshotsDays: num(e.target.value) } })} />
+            </Field>
+            <Field label="通知日志保留天数">
+              <Input type="number" value={String(scheduler.retention.notificationLogsDays)} onChange={(e) => setScheduler({ ...scheduler, retention: { ...scheduler.retention, notificationLogsDays: num(e.target.value) } })} />
+            </Field>
+            <Field label="公告保留天数">
+              <Input type="number" value={String(scheduler.retention.announcementsDays)} onChange={(e) => setScheduler({ ...scheduler, retention: { ...scheduler.retention, announcementsDays: num(e.target.value) } })} />
+            </Field>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <Button onClick={() => void save()} disabled={saving}>{saving ? "保存中..." : "保存"}</Button>
+          </div>
+        </SectionCard>
+      ) : null}
+      <NotificationStatus />
+    </section>
+  );
+}
+
+function AdminSettingsPage() {
   const query = useSystemConfig();
   const notifications = useNotificationChannels();
   const captchas = useCaptchaConfigs();

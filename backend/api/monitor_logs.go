@@ -19,7 +19,12 @@ func registerMonitorLogs(g *gin.RouterGroup, d *Deps) {
 			channelID = uint(id)
 		}
 		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
-		list, err := d.MonLogs.List(channelID, limit)
+		ids, err := visibleChannelIDs(c, d)
+		if err != nil {
+			fail(c, http.StatusUnauthorized, err)
+			return
+		}
+		list, err := d.MonLogs.ListVisible(channelID, ids, limit)
 		if err != nil {
 			fail(c, http.StatusInternalServerError, err)
 			return

@@ -113,6 +113,34 @@ func (r *Rates) ListChangesPage(channelID uint, page, pageSize int) ([]RateChang
 	return list, total, nil
 }
 
+func (r *Rates) ListChangesPageVisible(channelID uint, channelIDs []uint, page, pageSize int) ([]RateChangeLog, int64, error) {
+	if channelIDs == nil {
+		return r.ListChangesPage(channelID, page, pageSize)
+	}
+	if len(channelIDs) == 0 {
+		return []RateChangeLog{}, 0, nil
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	q := r.db.Model(&RateChangeLog{}).Where("channel_id IN ?", channelIDs)
+	if channelID != 0 {
+		q = q.Where("channel_id = ?", channelID)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var list []RateChangeLog
+	if err := q.Order("changed_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
+		return nil, 0, err
+	}
+	return list, total, nil
+}
+
 func (r *Rates) AppendBalance(s *BalanceSnapshot) error {
 	if s.SampledAt.IsZero() {
 		s.SampledAt = time.Now()
@@ -133,9 +161,31 @@ func (r *Rates) DeleteBalanceSnapshotsBefore(cutoff time.Time) (int64, error) {
 	return res.RowsAffected, res.Error
 }
 
+func (r *Rates) DeleteBalanceSnapshotsBeforeForChannels(cutoff time.Time, channelIDs []uint) (int64, error) {
+	if channelIDs == nil {
+		return r.DeleteBalanceSnapshotsBefore(cutoff)
+	}
+	if len(channelIDs) == 0 {
+		return 0, nil
+	}
+	res := r.db.Where("sampled_at < ? AND channel_id IN ?", cutoff, channelIDs).Delete(&BalanceSnapshot{})
+	return res.RowsAffected, res.Error
+}
+
 // DeleteCostSnapshotsBefore 删除 sampled_at < cutoff 的消费快照，返回删除行数。
 func (r *Rates) DeleteCostSnapshotsBefore(cutoff time.Time) (int64, error) {
 	res := r.db.Where("sampled_at < ?", cutoff).Delete(&CostSnapshot{})
+	return res.RowsAffected, res.Error
+}
+
+func (r *Rates) DeleteCostSnapshotsBeforeForChannels(cutoff time.Time, channelIDs []uint) (int64, error) {
+	if channelIDs == nil {
+		return r.DeleteCostSnapshotsBefore(cutoff)
+	}
+	if len(channelIDs) == 0 {
+		return 0, nil
+	}
+	res := r.db.Where("sampled_at < ? AND channel_id IN ?", cutoff, channelIDs).Delete(&CostSnapshot{})
 	return res.RowsAffected, res.Error
 }
 
@@ -172,6 +222,10 @@ type DailyCostAggregate struct {
 // 实现：对每个 (channel_id, day) 取该天最后一次 BalanceSnapshot 的余额，再按 day 求和，
 // 然后补齐窗口内缺失的日期。窗口内完全没有采样时返回空数组。
 func (r *Rates) AggregateBalanceTrend(days int) ([]DailyAggregate, error) {
+	return r.AggregateBalanceTrendForChannels(days, nil)
+}
+
+func (r *Rates) AggregateBalanceTrendForChannels(days int, channelIDs []uint) ([]DailyAggregate, error) {
 	if days <= 0 {
 		days = 7
 	}
@@ -179,10 +233,14 @@ func (r *Rates) AggregateBalanceTrend(days int) ([]DailyAggregate, error) {
 	since := today.AddDate(0, 0, -(days - 1))
 
 	var snapshots []BalanceSnapshot
-	if err := r.db.
-		Where("sampled_at >= ?", since).
-		Order("sampled_at ASC").
-		Find(&snapshots).Error; err != nil {
+	q := r.db.Where("sampled_at >= ?", since)
+	if channelIDs != nil {
+		if len(channelIDs) == 0 {
+			return []DailyAggregate{}, nil
+		}
+		q = q.Where("channel_id IN ?", channelIDs)
+	}
+	if err := q.Order("sampled_at ASC").Find(&snapshots).Error; err != nil {
 		return nil, err
 	}
 	if len(snapshots) == 0 {
@@ -215,6 +273,10 @@ func (r *Rates) AggregateBalanceTrend(days int) ([]DailyAggregate, error) {
 
 // AggregateCostTrend 取最近 N 天的"日内最后一次今日消费"按渠道之和，作为总消费趋势。
 func (r *Rates) AggregateCostTrend(days int) ([]DailyCostAggregate, error) {
+	return r.AggregateCostTrendForChannels(days, nil)
+}
+
+func (r *Rates) AggregateCostTrendForChannels(days int, channelIDs []uint) ([]DailyCostAggregate, error) {
 	if days <= 0 {
 		days = 7
 	}
@@ -222,10 +284,14 @@ func (r *Rates) AggregateCostTrend(days int) ([]DailyCostAggregate, error) {
 	since := today.AddDate(0, 0, -(days - 1))
 
 	var snapshots []CostSnapshot
-	if err := r.db.
-		Where("sampled_at >= ?", since).
-		Order("sampled_at ASC").
-		Find(&snapshots).Error; err != nil {
+	q := r.db.Where("sampled_at >= ?", since)
+	if channelIDs != nil {
+		if len(channelIDs) == 0 {
+			return []DailyCostAggregate{}, nil
+		}
+		q = q.Where("channel_id IN ?", channelIDs)
+	}
+	if err := q.Order("sampled_at ASC").Find(&snapshots).Error; err != nil {
 		return nil, err
 	}
 	if len(snapshots) == 0 {

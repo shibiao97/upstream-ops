@@ -48,7 +48,11 @@ func NewService(
 
 // ScanAllBalances 扫描所有启用监控的渠道余额。单个失败不影响其他。
 func (s *Service) ScanAllBalances(ctx context.Context) {
-	list, err := s.channels.ListMonitorEnabled()
+	s.ScanOwnerBalances(ctx, 0)
+}
+
+func (s *Service) ScanOwnerBalances(ctx context.Context, ownerID uint) {
+	list, err := s.channels.ListMonitorEnabledByOwner(ownerID)
 	if err != nil {
 		s.log.Error("list channels", "err", err)
 		return
@@ -67,7 +71,11 @@ func (s *Service) ScanAllBalances(ctx context.Context) {
 
 // ScanAllRates 扫描所有启用监控的渠道倍率。
 func (s *Service) ScanAllRates(ctx context.Context) {
-	list, err := s.channels.ListMonitorEnabled()
+	s.ScanOwnerRates(ctx, 0)
+}
+
+func (s *Service) ScanOwnerRates(ctx context.Context, ownerID uint) {
+	list, err := s.channels.ListMonitorEnabledByOwner(ownerID)
 	if err != nil {
 		s.log.Error("list channels", "err", err)
 		return
@@ -78,6 +86,21 @@ func (s *Service) ScanAllRates(ctx context.Context) {
 			s.log.Warn("refresh rates failed", "channel", c.Name, "err", err)
 		}
 	}
+}
+
+func (s *Service) OwnerChannelIDs(ownerID uint) []uint {
+	list, err := s.channels.ListVisible(ownerID, true)
+	if err != nil {
+		if s.log != nil {
+			s.log.Warn("list owner channels", "owner_user_id", ownerID, "err", err)
+		}
+		return nil
+	}
+	out := make([]uint, 0, len(list))
+	for _, ch := range list {
+		out = append(out, ch.ID)
+	}
+	return out
 }
 
 // RefreshBalance 单个渠道余额刷新，可被 API 手动触发。

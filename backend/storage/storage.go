@@ -119,6 +119,8 @@ func AutoMigrate(db *gorm.DB) error {
 		return err
 	}
 	return db.AutoMigrate(
+		&SystemUser{},
+		&UserSchedulerSetting{},
 		&Channel{},
 		&AuthSession{},
 		&CaptchaConfig{},

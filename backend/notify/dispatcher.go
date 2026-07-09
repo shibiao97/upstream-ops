@@ -135,7 +135,7 @@ func (d *Dispatcher) DispatchRateEventBatch(ctx context.Context, channel *storag
 		return nil
 	}
 
-	notifyChannels, err := d.repo.ListEnabledChannels()
+	notifyChannels, err := d.repo.ListEnabledChannelsForUpstream(channel.ID)
 	if err != nil {
 		return err
 	}
@@ -176,7 +176,7 @@ func (d *Dispatcher) DispatchRateStructureBatch(ctx context.Context, channel *st
 	if channel == nil || len(change.Added)+len(change.Removed) == 0 {
 		return nil
 	}
-	notifyChannels, err := d.repo.ListEnabledChannels()
+	notifyChannels, err := d.repo.ListEnabledChannelsForUpstream(channel.ID)
 	if err != nil {
 		return err
 	}
@@ -265,7 +265,7 @@ func (d *Dispatcher) suppress(msg Message) bool {
 // extraFilter 可选：用于在 ParseSubscriptions / AnyMatch 之后做额外裁剪；
 // 当前没有调用方传入，保留参数位是为以后扩展。
 func (d *Dispatcher) fanout(ctx context.Context, msg Message, extraFilter func(*storage.NotificationChannel) bool) error {
-	channels, err := d.repo.ListEnabledChannels()
+	channels, err := d.repo.ListEnabledChannelsForUpstream(msg.ChannelID)
 	if err != nil {
 		return err
 	}

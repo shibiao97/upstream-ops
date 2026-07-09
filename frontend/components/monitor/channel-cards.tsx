@@ -51,8 +51,9 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useConfirm } from "@/components/ui/confirm-dialog"
-import { useChannels, useChannelsPage, useChannelRates } from "@/lib/queries"
+import { useChannels, useChannelsPage, useChannelRates, useUsers } from "@/lib/queries"
 import { apiFetch } from "@/lib/api"
+import { useAuth } from "@/lib/auth-context"
 import { useTriggerRefresh } from "@/lib/refresh-context"
 import { channelTypeLabel, decimal, formatRatio, money, relativeTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -517,10 +518,13 @@ function SyncProgressStrip({ state }: { state: ChannelSyncState }) {
 }
 
 export function ChannelCards() {
-  const { data: channels, loading: channelsLoading } = useChannels()
+  const { isSuperAdmin } = useAuth()
+  const [ownerFilter, setOwnerFilter] = useState<number | "all">("all")
+  const users = useUsers("", isSuperAdmin)
+  const { data: channels, loading: channelsLoading } = useChannels(ownerFilter)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<ChannelPageSize>(9)
-  const pageQuery = useChannelsPage(page, pageSize === "all" ? -1 : pageSize)
+  const pageQuery = useChannelsPage(page, pageSize === "all" ? -1 : pageSize, ownerFilter)
   const refresh = useTriggerRefresh()
   const { confirm, dialog: confirmDialog } = useConfirm()
   const [editing, setEditing] = useState<Channel | null>(null)
@@ -738,6 +742,27 @@ export function ChannelCards() {
           <p className="text-xs text-muted-foreground">{"实时健康、余额与同步状态"}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {isSuperAdmin ? (
+            <Select
+              value={String(ownerFilter)}
+              onValueChange={(value) => {
+                setOwnerFilter(value === "all" ? "all" : Number(value))
+                setPage(1)
+              }}
+            >
+              <SelectTrigger size="sm" className="h-8 w-44 text-xs">
+                <SelectValue placeholder="所有账号" />
+              </SelectTrigger>
+              <SelectContent align="end">
+                <SelectItem value="all">所有账号</SelectItem>
+                {(users.data ?? []).map((u) => (
+                  <SelectItem key={u.id} value={String(u.id)}>
+                    {u.username}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
           <span className="text-xs text-muted-foreground">
             {totalChannels}{" 个渠道"}
           </span>
@@ -805,6 +830,11 @@ export function ChannelCards() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className="truncate text-sm font-semibold text-foreground">{c.name}</span>
+                      {isSuperAdmin && c.owner_username ? (
+                        <span className="inline-flex max-w-40 truncate rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground ring-1 ring-inset ring-border">
+                          {c.owner_username}
+                        </span>
+                      ) : null}
                       <span
                         className={cn(
                           "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset",

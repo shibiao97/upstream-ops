@@ -19,9 +19,38 @@ func (r *Notifications) ListChannels() ([]NotificationChannel, error) {
 	return list, nil
 }
 
+func (r *Notifications) ListChannelsVisible(ownerID uint, super bool) ([]NotificationChannel, error) {
+	q := r.db.Order("id ASC")
+	if !super {
+		q = q.Where("owner_user_id = ?", ownerID)
+	} else if ownerID != 0 {
+		q = q.Where("owner_user_id = ?", ownerID)
+	}
+	var list []NotificationChannel
+	if err := q.Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 func (r *Notifications) ListEnabledChannels() ([]NotificationChannel, error) {
 	var list []NotificationChannel
 	if err := r.db.Where("enabled = ?", true).Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+func (r *Notifications) ListEnabledChannelsForUpstream(upstreamID uint) ([]NotificationChannel, error) {
+	if upstreamID == 0 {
+		return r.ListEnabledChannels()
+	}
+	var ch Channel
+	if err := r.db.Select("owner_user_id").First(&ch, upstreamID).Error; err != nil {
+		return nil, err
+	}
+	var list []NotificationChannel
+	if err := r.db.Where("enabled = ? AND owner_user_id = ?", true, ch.OwnerUserID).Find(&list).Error; err != nil {
 		return nil, err
 	}
 	return list, nil
@@ -80,9 +109,47 @@ func (r *Notifications) ListLogsPage(page, pageSize int) ([]NotificationLog, int
 	return list, total, nil
 }
 
+func (r *Notifications) ListLogsPageVisible(page, pageSize int, ownerID uint, super bool) ([]NotificationLog, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	q := r.db.Model(&NotificationLog{})
+	if !super {
+		q = q.Joins("JOIN notification_channels nc ON nc.id = notification_logs.channel_id").Where("nc.owner_user_id = ?", ownerID)
+	} else if ownerID != 0 {
+		q = q.Joins("JOIN notification_channels nc ON nc.id = notification_logs.channel_id").Where("nc.owner_user_id = ?", ownerID)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var list []NotificationLog
+	if err := q.Order("sent_at DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&list).Error; err != nil {
+		return nil, 0, err
+	}
+	return list, total, nil
+}
+
 // DeleteLogsBefore 删除 sent_at < cutoff 的通知日志，返回删除行数。
 func (r *Notifications) DeleteLogsBefore(cutoff time.Time) (int64, error) {
 	res := r.db.Where("sent_at < ?", cutoff).Delete(&NotificationLog{})
+	return res.RowsAffected, res.Error
+}
+
+func (r *Notifications) DeleteLogsBeforeForOwner(cutoff time.Time, ownerID uint) (int64, error) {
+	if ownerID == 0 {
+		return r.DeleteLogsBefore(cutoff)
+	}
+	res := r.db.Where(
+		"sent_at < ? AND channel_id IN (SELECT id FROM notification_channels WHERE owner_user_id = ?)",
+		cutoff, ownerID,
+	).Delete(&NotificationLog{})
 	return res.RowsAffected, res.Error
 }
 

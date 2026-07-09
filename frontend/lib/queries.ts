@@ -20,6 +20,7 @@ import type {
   RelayConfig,
   RelaySummary,
   SystemConfigResponse,
+  SystemUser,
   UpstreamAnnouncementPage,
 } from "@/lib/api-types"
 
@@ -158,12 +159,22 @@ export function useRelaySummary(date?: string) {
   return useApi<RelaySummary>(`/relay/summary${q}`)
 }
 
-export function useChannels() {
-  return useApi<Channel[]>("/channels")
+function ownerQuery(ownerUserID?: number | "all") {
+  return ownerUserID && ownerUserID !== "all" ? `&owner_user_id=${ownerUserID}` : ""
 }
 
-export function useChannelsPage(page = 1, pageSize = 9) {
-  return useApi<ChannelPage>(`/channels?page=${page}&page_size=${pageSize}`)
+export function useChannels(ownerUserID?: number | "all") {
+  const suffix = ownerQuery(ownerUserID).replace(/^&/, "?")
+  return useApi<Channel[]>(`/channels${suffix}`)
+}
+
+export function useChannelsPage(page = 1, pageSize = 9, ownerUserID?: number | "all") {
+  return useApi<ChannelPage>(`/channels?page=${page}&page_size=${pageSize}${ownerQuery(ownerUserID)}`)
+}
+
+export function useUsers(search = "", enabled = true) {
+  const q = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : ""
+  return useApi<SystemUser[]>(enabled ? `/users${q}` : null)
 }
 
 export function useChannelRates(channelID: number | null) {

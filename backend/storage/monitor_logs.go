@@ -39,8 +39,40 @@ func (r *MonitorLogs) List(channelID uint, limit int) ([]MonitorLog, error) {
 	return list, nil
 }
 
+func (r *MonitorLogs) ListVisible(channelID uint, channelIDs []uint, limit int) ([]MonitorLog, error) {
+	if channelIDs == nil {
+		return r.List(channelID, limit)
+	}
+	if len(channelIDs) == 0 {
+		return []MonitorLog{}, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	q := r.db.Where("channel_id IN ?", channelIDs).Order("started_at DESC").Limit(limit)
+	if channelID != 0 {
+		q = q.Where("channel_id = ?", channelID)
+	}
+	var list []MonitorLog
+	if err := q.Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 // DeleteBefore 删除 started_at < cutoff 的日志，返回删除行数。
 func (r *MonitorLogs) DeleteBefore(cutoff time.Time) (int64, error) {
 	res := r.db.Where("started_at < ?", cutoff).Delete(&MonitorLog{})
+	return res.RowsAffected, res.Error
+}
+
+func (r *MonitorLogs) DeleteBeforeForChannels(cutoff time.Time, channelIDs []uint) (int64, error) {
+	if channelIDs == nil {
+		return r.DeleteBefore(cutoff)
+	}
+	if len(channelIDs) == 0 {
+		return 0, nil
+	}
+	res := r.db.Where("started_at < ? AND channel_id IN ?", cutoff, channelIDs).Delete(&MonitorLog{})
 	return res.RowsAffected, res.Error
 }

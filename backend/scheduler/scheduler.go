@@ -16,6 +16,7 @@ import (
 
 type Scheduler struct {
 	cfg           config.SchedulerConfig
+	ownerUserID   uint
 	log           *slog.Logger
 	cron          *cron.Cron
 	monitor       *monitor.Service
@@ -40,8 +41,25 @@ func New(
 	proxy config.ProxyConfig,
 	log *slog.Logger,
 ) *Scheduler {
+	return NewForOwner(cfg, 0, m, monLogs, rates, notifies, announcements, captchas, cipher, proxy, log)
+}
+
+func NewForOwner(
+	cfg config.SchedulerConfig,
+	ownerUserID uint,
+	m *monitor.Service,
+	monLogs *storage.MonitorLogs,
+	rates *storage.Rates,
+	notifies *storage.Notifications,
+	announcements *storage.UpstreamAnnouncements,
+	captchas *storage.Captchas,
+	cipher *crypto.Cipher,
+	proxy config.ProxyConfig,
+	log *slog.Logger,
+) *Scheduler {
 	return &Scheduler{
 		cfg:           cfg,
+		ownerUserID:   ownerUserID,
 		log:           log,
 		cron:          cron.New(cron.WithSeconds()),
 		monitor:       m,
@@ -56,6 +74,9 @@ func New(
 }
 
 func (s *Scheduler) Start() error {
+	if err := ValidateConfig(s.cfg); err != nil {
+		return err
+	}
 	if s.cfg.BalanceCron != "" {
 		if _, err := s.cron.AddFunc(s.cfg.BalanceCron, s.runBalance); err != nil {
 			return err
@@ -81,6 +102,26 @@ func (s *Scheduler) Start() error {
 	return nil
 }
 
+func ValidateConfig(cfg config.SchedulerConfig) error {
+	c := cron.New(cron.WithSeconds())
+	if cfg.BalanceCron != "" {
+		if _, err := c.AddFunc(cfg.BalanceCron, func() {}); err != nil {
+			return err
+		}
+	}
+	if cfg.RateCron != "" {
+		if _, err := c.AddFunc(cfg.RateCron, func() {}); err != nil {
+			return err
+		}
+	}
+	if cfg.Retention.Cron != "" {
+		if _, err := c.AddFunc(cfg.Retention.Cron, func() {}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Scheduler) Stop() {
 	if s.cron != nil {
 		<-s.cron.Stop().Done()
@@ -88,9 +129,13 @@ func (s *Scheduler) Stop() {
 }
 
 func (s *Scheduler) runBalance() {
+	s.RunBalanceNow()
+}
+
+func (s *Scheduler) RunBalanceNow() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	s.monitor.ScanAllBalances(ctx)
+	s.monitor.ScanOwnerBalances(ctx, s.ownerUserID)
 	if s.captchas != nil && s.cipher != nil {
 		if _, err := captcha.RefreshAllBalancesWithProxy(ctx, s.captchas, s.cipher, s.log, s.proxy); err != nil {
 			s.log.Warn("refresh captcha balances failed", "err", err)
@@ -99,9 +144,13 @@ func (s *Scheduler) runBalance() {
 }
 
 func (s *Scheduler) runRates() {
+	s.RunRatesNow()
+}
+
+func (s *Scheduler) RunRatesNow() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	s.monitor.ScanAllRates(ctx)
+	s.monitor.ScanOwnerRates(ctx, s.ownerUserID)
 }
 
 func (s *Scheduler) hasRetention() bool {
@@ -114,12 +163,20 @@ func (s *Scheduler) hasRetention() bool {
 
 // runRetention 按配置删除过期历史。任一表失败不影响其它，全部错误写日志。
 func (s *Scheduler) runRetention() {
+	s.RunRetentionNow()
+}
+
+func (s *Scheduler) RunRetentionNow() {
 	r := s.cfg.Retention
 	now := time.Now()
+	var channelIDs []uint
+	if s.ownerUserID != 0 && s.monitor != nil {
+		channelIDs = s.monitor.OwnerChannelIDs(s.ownerUserID)
+	}
 
 	if r.MonitorLogsDays > 0 {
 		cutoff := now.AddDate(0, 0, -r.MonitorLogsDays)
-		n, err := s.monLogs.DeleteBefore(cutoff)
+		n, err := s.monLogs.DeleteBeforeForChannels(cutoff, channelIDs)
 		if err != nil {
 			s.log.Warn("retention monitor_logs failed", "err", err)
 		} else if n > 0 {
@@ -129,14 +186,14 @@ func (s *Scheduler) runRetention() {
 
 	if r.BalanceSnapshotsDays > 0 {
 		cutoff := now.AddDate(0, 0, -r.BalanceSnapshotsDays)
-		n, err := s.rates.DeleteBalanceSnapshotsBefore(cutoff)
+		n, err := s.rates.DeleteBalanceSnapshotsBeforeForChannels(cutoff, channelIDs)
 		if err != nil {
 			s.log.Warn("retention balance_snapshots failed", "err", err)
 		} else if n > 0 {
 			s.log.Info("retention balance_snapshots deleted", "rows", n, "before", cutoff)
 		}
 
-		n, err = s.rates.DeleteCostSnapshotsBefore(cutoff)
+		n, err = s.rates.DeleteCostSnapshotsBeforeForChannels(cutoff, channelIDs)
 		if err != nil {
 			s.log.Warn("retention cost_snapshots failed", "err", err)
 		} else if n > 0 {
@@ -146,7 +203,7 @@ func (s *Scheduler) runRetention() {
 
 	if r.NotificationLogsDays > 0 {
 		cutoff := now.AddDate(0, 0, -r.NotificationLogsDays)
-		n, err := s.notifies.DeleteLogsBefore(cutoff)
+		n, err := s.notifies.DeleteLogsBeforeForOwner(cutoff, s.ownerUserID)
 		if err != nil {
 			s.log.Warn("retention notification_logs failed", "err", err)
 		} else if n > 0 {
@@ -156,7 +213,7 @@ func (s *Scheduler) runRetention() {
 
 	if r.AnnouncementsDays > 0 && s.announcements != nil {
 		cutoff := now.AddDate(0, 0, -r.AnnouncementsDays)
-		n, err := s.announcements.DeleteBefore(cutoff)
+		n, err := s.announcements.DeleteBeforeForChannels(cutoff, channelIDs)
 		if err != nil {
 			s.log.Warn("retention announcements failed", "err", err)
 		} else if n > 0 {

@@ -10,11 +10,12 @@ import { useAppVersion } from "@/lib/queries"
 import type { ApiError } from "@/lib/api"
 
 export function LoginPage() {
-  const { login } = useAuth()
+  const { login, register } = useAuth()
   const appVersion = useAppVersion()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [mode, setMode] = useState<"login" | "register">("login")
   const [error, setError] = useState<string | null>(null)
   const appTitle = appVersion.data?.title?.trim() || "UpstreamOps"
 
@@ -27,7 +28,11 @@ export function LoginPage() {
     setError(null)
     setSubmitting(true)
     try {
-      await login(username.trim(), password)
+      if (mode === "register") {
+        await register(username.trim(), password)
+      } else {
+        await login(username.trim(), password)
+      }
     } catch (err) {
       const e = err as ApiError
       if (e.status === 401) {
@@ -45,7 +50,7 @@ export function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader className="space-y-1.5">
           <CardTitle className="text-2xl">{appTitle}</CardTitle>
-          <CardDescription>登录后台，监控渠道余额和倍率。</CardDescription>
+          <CardDescription>{mode === "register" ? "注册普通用户账号。" : "登录后台，监控渠道余额和倍率。"}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -80,7 +85,19 @@ export function LoginPage() {
               </p>
             ) : null}
             <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? "登录中…" : "登录"}
+              {submitting ? "处理中…" : mode === "register" ? "注册并登录" : "登录"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              disabled={submitting}
+              onClick={() => {
+                setError(null)
+                setMode((v) => (v === "login" ? "register" : "login"))
+              }}
+            >
+              {mode === "register" ? "已有账号，去登录" : "没有账号，注册普通用户"}
             </Button>
           </form>
         </CardContent>

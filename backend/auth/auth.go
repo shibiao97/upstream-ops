@@ -1,7 +1,3 @@
-// Package auth 提供单管理员登录：账号密码写在 config 里，登录后下发 HMAC-SHA256 签名的短 token。
-//
-// Token 格式："<base64url(payload)>.<base64url(hmac)>"，payload 是 {"sub":"<user>","exp":<unix>}。
-// 服务端无状态，AppSecret 不变的情况下重启 token 仍有效。
 package auth
 
 import (
@@ -16,22 +12,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bejix/upstream-ops/backend/storage"
 	"github.com/gin-gonic/gin"
 )
 
-// Service 单管理员登录服务。
 type Service struct {
-	username string
-	password string
+	users    *storage.Users
 	secret   []byte
 	tokenTTL time.Duration
 }
 
-// New 构造 Service。secret 推荐 32 字节以上；若为空报错。
-// 调用方应在 secret 为空时回退到 APP_SECRET。
-func New(username, password, secret string, ttl time.Duration) (*Service, error) {
-	if username == "" || password == "" {
-		return nil, errors.New("auth username / password are required")
+func New(users *storage.Users, secret string, ttl time.Duration) (*Service, error) {
+	if users == nil {
+		return nil, errors.New("users repo is nil")
 	}
 	if secret == "" {
 		return nil, errors.New("auth token secret is empty")
@@ -39,64 +32,54 @@ func New(username, password, secret string, ttl time.Duration) (*Service, error)
 	if ttl <= 0 {
 		ttl = 7 * 24 * time.Hour
 	}
-	return &Service{
-		username: username,
-		password: password,
-		secret:   []byte(secret),
-		tokenTTL: ttl,
-	}, nil
+	return &Service{users: users, secret: []byte(secret), tokenTTL: ttl}, nil
 }
 
-// claims 是签发到 token payload 里的最小必要字段。
 type claims struct {
-	Sub string `json:"sub"`
-	Exp int64  `json:"exp"`
+	Sub  string `json:"sub"`
+	UID  uint   `json:"uid"`
+	Role string `json:"role"`
+	Exp  int64  `json:"exp"`
 }
 
-// Login 校验账号密码，返回新的 token 与过期时间。
-func (s *Service) Login(username, password string) (string, time.Time, error) {
-	if subtle.ConstantTimeCompare([]byte(username), []byte(s.username)) != 1 ||
-		subtle.ConstantTimeCompare([]byte(password), []byte(s.password)) != 1 {
-		return "", time.Time{}, errors.New("invalid username or password")
+func (s *Service) Login(username, password string) (string, time.Time, *storage.SystemUser, error) {
+	u, err := s.users.FindByUsername(username)
+	if err != nil || !u.Enabled || !storage.CheckPassword(u.PasswordHash, password) {
+		return "", time.Time{}, nil, errors.New("invalid username or password")
 	}
 	expiresAt := time.Now().Add(s.tokenTTL)
-	c := claims{Sub: s.username, Exp: expiresAt.Unix()}
-	tok, err := s.sign(c)
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	return tok, expiresAt, nil
+	tok, err := s.sign(claims{Sub: u.Username, UID: u.ID, Role: string(u.Role), Exp: expiresAt.Unix()})
+	return tok, expiresAt, u, err
 }
 
-// Verify 校验 token 合法性并返回 subject。
-func (s *Service) Verify(token string) (string, error) {
+func (s *Service) Verify(token string) (*storage.SystemUser, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 2 {
-		return "", errors.New("malformed token")
+		return nil, errors.New("malformed token")
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return "", fmt.Errorf("decode payload: %w", err)
+		return nil, fmt.Errorf("decode payload: %w", err)
 	}
 	sig, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return "", fmt.Errorf("decode sig: %w", err)
+		return nil, fmt.Errorf("decode sig: %w", err)
 	}
-	expectedSig := s.mac(payload)
-	if subtle.ConstantTimeCompare(sig, expectedSig) != 1 {
-		return "", errors.New("bad signature")
+	if subtle.ConstantTimeCompare(sig, s.mac(payload)) != 1 {
+		return nil, errors.New("bad signature")
 	}
 	var c claims
 	if err := json.Unmarshal(payload, &c); err != nil {
-		return "", fmt.Errorf("decode claims: %w", err)
+		return nil, fmt.Errorf("decode claims: %w", err)
 	}
 	if time.Now().Unix() > c.Exp {
-		return "", errors.New("token expired")
+		return nil, errors.New("token expired")
 	}
-	if c.Sub != s.username {
-		return "", errors.New("unknown subject")
+	u, err := s.users.FindByID(c.UID)
+	if err != nil || !u.Enabled || u.Username != c.Sub || string(u.Role) != c.Role {
+		return nil, errors.New("unknown subject")
 	}
-	return c.Sub, nil
+	return u, nil
 }
 
 func (s *Service) sign(c claims) (string, error) {
@@ -114,23 +97,14 @@ func (s *Service) mac(payload []byte) []byte {
 	return m.Sum(nil)
 }
 
-// Username 返回当前 Service 绑定的管理员账号（前端展示用）。
-func (s *Service) Username() string { return s.username }
-
-// TokenTTL 返回登录 token 的有效期。
 func (s *Service) TokenTTL() time.Duration { return s.tokenTTL }
 
-// Middleware 校验 Authorization 头。不通过返回 401。
-//
-// 路径白名单（不需要鉴权）：
-//   - "/healthz"
-//   - "/api/version"
-//   - "/api/auth/login"
 func (s *Service) Middleware() gin.HandlerFunc {
 	whitelist := map[string]struct{}{
-		"/healthz":        {},
-		"/api/version":    {},
-		"/api/auth/login": {},
+		"/healthz":           {},
+		"/api/version":       {},
+		"/api/auth/login":    {},
+		"/api/auth/register": {},
 	}
 	return func(c *gin.Context) {
 		if _, ok := whitelist[c.FullPath()]; ok {
@@ -146,12 +120,12 @@ func (s *Service) Middleware() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing token"})
 			return
 		}
-		sub, err := s.Verify(token)
+		u, err := s.Verify(token)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
 		}
-		c.Set("authSubject", sub)
+		c.Set("authUser", u)
 		c.Next()
 	}
 }

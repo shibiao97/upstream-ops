@@ -51,21 +51,23 @@ type channelService interface {
 
 // Deps 把所有 handler 需要的依赖打包传入。
 type Deps struct {
-	DB            *gorm.DB
-	Cipher        *crypto.Cipher
-	Runtime       *runtimeconfig.Manager
-	Channels      *storage.Channels
-	Sessions      *storage.AuthSessions
-	Captchas      *storage.Captchas
-	Notifies      *storage.Notifications
-	Announcements *storage.UpstreamAnnouncements
-	Rates         *storage.Rates
-	MonLogs       *storage.MonitorLogs
-	ChannelSvc    channelService
-	Monitor       monitorService
-	Dispatcher    *notify.Dispatcher
-	Relay         *relay.Service
-	Log           *slog.Logger
+	DB             *gorm.DB
+	Cipher         *crypto.Cipher
+	Runtime        *runtimeconfig.Manager
+	Users          *storage.Users
+	Channels       *storage.Channels
+	UserSchedulers *storage.UserSchedulerSettings
+	Sessions       *storage.AuthSessions
+	Captchas       *storage.Captchas
+	Notifies       *storage.Notifications
+	Announcements  *storage.UpstreamAnnouncements
+	Rates          *storage.Rates
+	MonLogs        *storage.MonitorLogs
+	ChannelSvc     channelService
+	Monitor        monitorService
+	Dispatcher     *notify.Dispatcher
+	Relay          *relay.Service
+	Log            *slog.Logger
 
 	// Frontend 可选：传入嵌入的前端 dist 文件系统。nil 表示不挂载（本地开发用 vite dev server）。
 	Frontend fs.FS
@@ -93,6 +95,7 @@ func Register(r *gin.Engine, d *Deps) {
 	{
 		registerVersion(api, d)
 		registerAuth(api, d)
+		registerUsers(api, d)
 		registerChannels(api, d)
 		registerCaptchas(api, d)
 		registerNotifications(api, d)

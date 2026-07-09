@@ -23,7 +23,12 @@ func registerRates(g *gin.RouterGroup, d *Deps) {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
-		list, total, err := d.Rates.ListChangesPage(channelID, page, pageSize)
+		ids, err := visibleChannelIDs(c, d)
+		if err != nil {
+			fail(c, http.StatusUnauthorized, err)
+			return
+		}
+		list, total, err := d.Rates.ListChangesPageVisible(channelID, ids, page, pageSize)
 		if err != nil {
 			fail(c, http.StatusInternalServerError, err)
 			return

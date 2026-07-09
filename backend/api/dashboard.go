@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/bejix/upstream-ops/backend/storage"
 	"github.com/gin-gonic/gin"
 )
 
@@ -32,7 +33,12 @@ type dashboardChannelStat struct {
 }
 
 func dashboardSummary(c *gin.Context, d *Deps) {
-	channels, err := d.Channels.List()
+	u, ok := currentUser(c, d)
+	if !ok {
+		fail(c, http.StatusUnauthorized, nilErr("missing user"))
+		return
+	}
+	channels, err := d.Channels.ListVisible(visibleOwnerParam(c, u), isSuper(u))
 	if err != nil {
 		fail(c, http.StatusInternalServerError, err)
 		return
@@ -77,7 +83,7 @@ func dashboardSummary(c *gin.Context, d *Deps) {
 		}
 	}
 
-	recentChanges, err := d.Rates.ListChanges(0, 10)
+	recentChanges, _, err := d.Rates.ListChangesPageVisible(0, channelIDs(channels), 1, 10)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, err)
 		return
@@ -103,7 +109,12 @@ func dashboardBalanceTrend(c *gin.Context, d *Deps) {
 	if days <= 0 {
 		days = 7
 	}
-	trend, err := d.Rates.AggregateBalanceTrend(days)
+	ids, err := visibleChannelIDs(c, d)
+	if err != nil {
+		fail(c, http.StatusUnauthorized, err)
+		return
+	}
+	trend, err := d.Rates.AggregateBalanceTrendForChannels(days, ids)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, err)
 		return
@@ -116,10 +127,42 @@ func dashboardCostTrend(c *gin.Context, d *Deps) {
 	if days <= 0 {
 		days = 7
 	}
-	trend, err := d.Rates.AggregateCostTrend(days)
+	ids, err := visibleChannelIDs(c, d)
+	if err != nil {
+		fail(c, http.StatusUnauthorized, err)
+		return
+	}
+	trend, err := d.Rates.AggregateCostTrendForChannels(days, ids)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": trend})
 }
+
+func channelIDs(channels []storage.Channel) []uint {
+	ids := make([]uint, 0, len(channels))
+	for _, ch := range channels {
+		ids = append(ids, ch.ID)
+	}
+	return ids
+}
+
+func visibleChannelIDs(c *gin.Context, d *Deps) ([]uint, error) {
+	u, ok := currentUser(c, d)
+	if !ok {
+		return nil, nilErr("missing user")
+	}
+	if d == nil || d.Channels == nil {
+		return nil, nil
+	}
+	channels, err := d.Channels.ListVisible(visibleOwnerParam(c, u), isSuper(u))
+	if err != nil {
+		return nil, err
+	}
+	return channelIDs(channels), nil
+}
+
+type nilErr string
+
+func (e nilErr) Error() string { return string(e) }

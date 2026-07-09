@@ -52,6 +52,7 @@ func registerChannels(g *gin.RouterGroup, d *Deps) {
 
 type channelInput struct {
 	Name                   string                 `json:"name" binding:"required"`
+	OwnerUserID            uint                   `json:"owner_user_id"`
 	Type                   storage.ChannelType    `json:"type" binding:"required"`
 	SiteURL                string                 `json:"site_url" binding:"required"`
 	Username               string                 `json:"username"`
@@ -93,7 +94,8 @@ type channelUpdateInput struct {
 
 type channelOutput struct {
 	storage.Channel
-	UserID string `json:"user_id,omitempty"`
+	UserID        string `json:"user_id,omitempty"`
+	OwnerUsername string `json:"owner_username,omitempty"`
 }
 
 type channelRedeemInput struct {
@@ -116,13 +118,19 @@ type channelAPIKeyCreateInput = connector.APIKeyCreateRequest
 type channelAPIKeyUpdateInput = connector.APIKeyUpdateRequest
 
 func listChannels(c *gin.Context, d *Deps) {
+	u, ok := currentUser(c, d)
+	if !ok {
+		fail(c, http.StatusUnauthorized, fmt.Errorf("missing user"))
+		return
+	}
+	ownerID := visibleOwnerParam(c, u)
 	if c.Query("page") != "" || c.Query("page_size") != "" {
 		page, pageSize, err := parseChannelPageQuery(c)
 		if err != nil {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
-		list, total, err := d.Channels.ListPage(page, pageSize)
+		list, total, err := d.Channels.ListPageVisible(page, pageSize, ownerID, isSuper(u))
 		if err != nil {
 			fail(c, http.StatusInternalServerError, err)
 			return
@@ -141,7 +149,7 @@ func listChannels(c *gin.Context, d *Deps) {
 		return
 	}
 
-	list, err := d.Channels.List()
+	list, err := d.Channels.ListVisible(ownerID, isSuper(u))
 	if err != nil {
 		fail(c, http.StatusInternalServerError, err)
 		return
@@ -150,13 +158,27 @@ func listChannels(c *gin.Context, d *Deps) {
 }
 
 func createChannel(c *gin.Context, d *Deps) {
+	u, ok := currentUser(c, d)
+	if !ok {
+		fail(c, http.StatusUnauthorized, fmt.Errorf("missing user"))
+		return
+	}
 	var in channelInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
+	if !isSuper(u) && (in.TurnstileEnabled || in.CaptchaConfigID != nil) {
+		fail(c, http.StatusForbidden, fmt.Errorf("普通用户不能使用系统验证码服务"))
+		return
+	}
+	ownerID := u.ID
+	if isSuper(u) && in.OwnerUserID != 0 {
+		ownerID = in.OwnerUserID
+	}
 	created, err := d.ChannelSvc.Create(channel.CreateInput{
 		Name:                   in.Name,
+		OwnerUserID:            ownerID,
 		Type:                   in.Type,
 		SiteURL:                in.SiteURL,
 		Username:               in.Username,
@@ -193,6 +215,11 @@ func channelOutputs(d *Deps, list []storage.Channel) []channelOutput {
 func channelOutputFor(d *Deps, ch storage.Channel) channelOutput {
 	out := channelOutput{Channel: ch}
 	out.UserID = channelUserID(d, &ch)
+	if d != nil && d.Users != nil && ch.OwnerUserID != 0 {
+		if u, err := d.Users.FindByID(ch.OwnerUserID); err == nil {
+			out.OwnerUsername = u.Username
+		}
+	}
 	return out
 }
 
@@ -226,9 +253,8 @@ func getChannel(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
-	ch, err := d.Channels.FindByID(id)
-	if err != nil {
-		fail(c, http.StatusNotFound, err)
+	ch, ok := canUseChannel(c, d, id)
+	if !ok {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": channelOutputFor(d, *ch)})
@@ -240,18 +266,22 @@ func updateChannel(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
+	if _, ok := canUseChannel(c, d, id); !ok {
+		return
+	}
 	var in channelUpdateInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
+	u, _ := currentUser(c, d)
+	if !isSuper(u) && ((in.TurnstileEnabled != nil && *in.TurnstileEnabled) || in.CaptchaConfigID != nil) {
+		fail(c, http.StatusForbidden, fmt.Errorf("普通用户不能使用系统验证码服务"))
+		return
+	}
 	subscriptionEnabled := in.SubscriptionEnabled
 	if subscriptionEnabled != nil {
-		current, err := d.Channels.FindByID(id)
-		if err != nil {
-			fail(c, http.StatusNotFound, err)
-			return
-		}
+		current, _ := d.Channels.FindByID(id)
 		enabled := current.Type == storage.ChannelTypeSub2API && *subscriptionEnabled
 		subscriptionEnabled = &enabled
 	}
@@ -287,6 +317,9 @@ func deleteChannel(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
+	if _, ok := canUseChannel(c, d, id); !ok {
+		return
+	}
 	if err := d.ChannelSvc.Delete(id); err != nil {
 		fail(c, http.StatusInternalServerError, err)
 		return
@@ -298,6 +331,9 @@ func clearChannelLoginInfo(c *gin.Context, d *Deps) {
 	id, err := uintParam(c, "id")
 	if err != nil {
 		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	if _, ok := canUseChannel(c, d, id); !ok {
 		return
 	}
 	updated, err := d.ChannelSvc.ClearLoginInfo(id)
@@ -314,6 +350,9 @@ func toggleChannel(c *gin.Context, d *Deps, enabled bool) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
+	if _, ok := canUseChannel(c, d, id); !ok {
+		return
+	}
 	_, err = d.ChannelSvc.Update(id, channel.UpdateInput{MonitorEnabled: &enabled})
 	if err != nil {
 		fail(c, http.StatusInternalServerError, err)
@@ -328,9 +367,8 @@ func testLogin(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
-	ch, err := d.Channels.FindByID(id)
-	if err != nil {
-		fail(c, http.StatusNotFound, err)
+	ch, ok := canUseChannel(c, d, id)
+	if !ok {
 		return
 	}
 
@@ -356,9 +394,8 @@ func refreshBalance(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
-	ch, err := d.Channels.FindByID(id)
-	if err != nil {
-		fail(c, http.StatusNotFound, err)
+	ch, ok := canUseChannel(c, d, id)
+	if !ok {
 		return
 	}
 	if err := d.Monitor.RefreshBalance(c.Request.Context(), ch); err != nil {
@@ -374,9 +411,8 @@ func refreshRates(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
-	ch, err := d.Channels.FindByID(id)
-	if err != nil {
-		fail(c, http.StatusNotFound, err)
+	ch, ok := canUseChannel(c, d, id)
+	if !ok {
 		return
 	}
 	if err := d.Monitor.RefreshRates(c.Request.Context(), ch); err != nil {
@@ -392,8 +428,7 @@ func redeemChannel(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
-	if _, err := d.Channels.FindByID(id); err != nil {
-		fail(c, http.StatusNotFound, err)
+	if _, ok := canUseChannel(c, d, id); !ok {
 		return
 	}
 
@@ -414,6 +449,9 @@ func channelRechargeInfo(c *gin.Context, d *Deps) {
 	id, err := uintParam(c, "id")
 	if err != nil {
 		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	if _, ok := canUseChannel(c, d, id); !ok {
 		return
 	}
 	info, err := d.ChannelSvc.GetRechargeInfo(c.Request.Context(), id)
@@ -443,6 +481,9 @@ func createChannelRecharge(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, fmt.Errorf("仅支持 alipay 或 wxpay"))
 		return
 	}
+	if _, ok := canUseChannel(c, d, id); !ok {
+		return
+	}
 	res, err := d.ChannelSvc.CreateRecharge(c.Request.Context(), id, connector.RechargeRequest{
 		Amount:        in.Amount,
 		PaymentMethod: in.PaymentMethod,
@@ -459,6 +500,9 @@ func channelSubscriptionInfo(c *gin.Context, d *Deps) {
 	id, err := uintParam(c, "id")
 	if err != nil {
 		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	if _, ok := canUseChannel(c, d, id); !ok {
 		return
 	}
 	info, err := d.ChannelSvc.GetSubscriptionInfo(c.Request.Context(), id)
@@ -488,6 +532,9 @@ func createChannelSubscription(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, fmt.Errorf("请选择支付方式"))
 		return
 	}
+	if _, ok := canUseChannel(c, d, id); !ok {
+		return
+	}
 	res, err := d.ChannelSvc.CreateSubscription(c.Request.Context(), id, connector.SubscriptionRequest{
 		PlanID:        in.PlanID,
 		PaymentMethod: in.PaymentMethod,
@@ -506,6 +553,9 @@ func channelSubscriptionUsage(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
+	if _, ok := canUseChannel(c, d, id); !ok {
+		return
+	}
 	info, err := d.ChannelSvc.GetSubscriptionUsage(c.Request.Context(), id)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err)
@@ -518,6 +568,9 @@ func listChannelAPIKeys(c *gin.Context, d *Deps) {
 	id, err := uintParam(c, "id")
 	if err != nil {
 		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	if _, ok := canUseChannel(c, d, id); !ok {
 		return
 	}
 	page, pageSize, err := parsePageQuery(c)
@@ -545,6 +598,9 @@ func listChannelAPIKeyGroups(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
+	if _, ok := canUseChannel(c, d, id); !ok {
+		return
+	}
 	res, err := d.ChannelSvc.ListAPIKeyGroups(c.Request.Context(), id)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err)
@@ -566,6 +622,9 @@ func createChannelAPIKey(c *gin.Context, d *Deps) {
 	}
 	if strings.TrimSpace(in.Name) == "" {
 		fail(c, http.StatusBadRequest, fmt.Errorf("密钥名称不能为空"))
+		return
+	}
+	if _, ok := canUseChannel(c, d, id); !ok {
 		return
 	}
 	res, err := d.ChannelSvc.CreateAPIKey(c.Request.Context(), id, connector.APIKeyCreateRequest(in))
@@ -592,6 +651,9 @@ func updateChannelAPIKey(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
+	if _, ok := canUseChannel(c, d, id); !ok {
+		return
+	}
 	res, err := d.ChannelSvc.UpdateAPIKey(c.Request.Context(), id, keyID, connector.APIKeyUpdateRequest(in))
 	if err != nil {
 		fail(c, http.StatusBadRequest, err)
@@ -609,6 +671,9 @@ func deleteChannelAPIKey(c *gin.Context, d *Deps) {
 	keyID, err := int64Param(c, "key_id")
 	if err != nil || keyID <= 0 {
 		fail(c, http.StatusBadRequest, fmt.Errorf("密钥 ID 无效"))
+		return
+	}
+	if _, ok := canUseChannel(c, d, id); !ok {
 		return
 	}
 	if err := d.ChannelSvc.DeleteAPIKey(c.Request.Context(), id, keyID); err != nil {
@@ -629,6 +694,9 @@ func revealChannelAPIKey(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, fmt.Errorf("密钥 ID 无效"))
 		return
 	}
+	if _, ok := canUseChannel(c, d, id); !ok {
+		return
+	}
 	key, err := d.ChannelSvc.RevealAPIKey(c.Request.Context(), id, keyID)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err)
@@ -646,6 +714,9 @@ func listChannelAPIKeyModels(c *gin.Context, d *Deps) {
 	keyID, err := int64Param(c, "key_id")
 	if err != nil || keyID <= 0 {
 		fail(c, http.StatusBadRequest, fmt.Errorf("密钥 ID 无效"))
+		return
+	}
+	if _, ok := canUseChannel(c, d, id); !ok {
 		return
 	}
 	models, err := d.ChannelSvc.ListAPIKeyModels(c.Request.Context(), id, keyID)
@@ -672,6 +743,9 @@ func testChannelAPIKey(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
+	if _, ok := canUseChannel(c, d, id); !ok {
+		return
+	}
 	res, err := d.ChannelSvc.TestAPIKey(c.Request.Context(), id, keyID, in)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err)
@@ -686,6 +760,9 @@ func channelRates(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
+	if _, ok := canUseChannel(c, d, id); !ok {
+		return
+	}
 	list, err := d.Rates.ListByChannel(id)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, err)
@@ -698,6 +775,9 @@ func balanceHistory(c *gin.Context, d *Deps) {
 	id, err := uintParam(c, "id")
 	if err != nil {
 		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	if _, ok := canUseChannel(c, d, id); !ok {
 		return
 	}
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
@@ -836,9 +916,8 @@ func syncChannel(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
-	ch, err := d.Channels.FindByID(id)
-	if err != nil {
-		fail(c, http.StatusNotFound, err)
+	ch, ok := canUseChannel(c, d, id)
+	if !ok {
 		return
 	}
 
@@ -868,7 +947,12 @@ func syncChannel(c *gin.Context, d *Deps) {
 }
 
 func syncAllChannels(c *gin.Context, d *Deps) {
-	list, err := d.Channels.List()
+	u, ok := currentUser(c, d)
+	if !ok {
+		fail(c, http.StatusUnauthorized, fmt.Errorf("missing user"))
+		return
+	}
+	list, err := d.Channels.ListVisible(visibleOwnerParam(c, u), isSuper(u))
 	if err != nil {
 		fail(c, http.StatusInternalServerError, err)
 		return

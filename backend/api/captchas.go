@@ -12,6 +12,9 @@ import (
 func registerCaptchas(g *gin.RouterGroup, d *Deps) {
 	gp := g.Group("/captcha-configs")
 	gp.GET("", func(c *gin.Context) {
+		if !requireSuper(c, d) {
+			return
+		}
 		list, err := d.Captchas.List()
 		if err != nil {
 			fail(c, http.StatusInternalServerError, err)
@@ -23,6 +26,9 @@ func registerCaptchas(g *gin.RouterGroup, d *Deps) {
 	gp.PUT("/:id", func(c *gin.Context) { updateCaptcha(c, d) })
 	gp.POST("/:id/refresh-balance", func(c *gin.Context) { refreshCaptchaBalance(c, d) })
 	gp.DELETE("/:id", func(c *gin.Context) {
+		if !requireSuper(c, d) {
+			return
+		}
 		id, err := uintParam(c, "id")
 		if err != nil {
 			fail(c, http.StatusBadRequest, err)
@@ -47,6 +53,9 @@ type captchaInput struct {
 }
 
 func createCaptcha(c *gin.Context, d *Deps) {
+	if !requireSuper(c, d) {
+		return
+	}
 	var in captchaInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		fail(c, http.StatusBadRequest, err)
@@ -74,6 +83,9 @@ func createCaptcha(c *gin.Context, d *Deps) {
 }
 
 func refreshCaptchaBalance(c *gin.Context, d *Deps) {
+	if !requireSuper(c, d) {
+		return
+	}
 	id, err := uintParam(c, "id")
 	if err != nil {
 		fail(c, http.StatusBadRequest, err)
@@ -97,6 +109,9 @@ func refreshCaptchaBalance(c *gin.Context, d *Deps) {
 }
 
 func updateCaptcha(c *gin.Context, d *Deps) {
+	if !requireSuper(c, d) {
+		return
+	}
 	id, err := uintParam(c, "id")
 	if err != nil {
 		fail(c, http.StatusBadRequest, err)

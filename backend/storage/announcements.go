@@ -47,6 +47,31 @@ func (r *UpstreamAnnouncements) ListPage(page, pageSize int) ([]UpstreamAnnounce
 	return list, total, nil
 }
 
+func (r *UpstreamAnnouncements) ListPageForChannels(page, pageSize int, channelIDs []uint) ([]UpstreamAnnouncement, int64, error) {
+	if channelIDs == nil {
+		return r.ListPage(page, pageSize)
+	}
+	if len(channelIDs) == 0 {
+		return []UpstreamAnnouncement{}, 0, nil
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	q := r.db.Model(&UpstreamAnnouncement{}).Where("channel_id IN ?", channelIDs)
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var list []UpstreamAnnouncement
+	if err := q.Order(upstreamAnnouncementOrder).Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
+		return nil, 0, err
+	}
+	return list, total, nil
+}
+
 func (r *UpstreamAnnouncements) CountByChannel(channelID uint) (int64, error) {
 	var n int64
 	if err := r.db.Model(&UpstreamAnnouncement{}).Where("channel_id = ?", channelID).Count(&n).Error; err != nil {
@@ -88,6 +113,17 @@ func (r *UpstreamAnnouncements) DeleteByChannel(channelID uint) (int64, error) {
 
 func (r *UpstreamAnnouncements) DeleteBefore(cutoff time.Time) (int64, error) {
 	res := r.db.Where("first_seen_at < ?", cutoff).Delete(&UpstreamAnnouncement{})
+	return res.RowsAffected, res.Error
+}
+
+func (r *UpstreamAnnouncements) DeleteBeforeForChannels(cutoff time.Time, channelIDs []uint) (int64, error) {
+	if channelIDs == nil {
+		return r.DeleteBefore(cutoff)
+	}
+	if len(channelIDs) == 0 {
+		return 0, nil
+	}
+	res := r.db.Where("first_seen_at < ? AND channel_id IN ?", cutoff, channelIDs).Delete(&UpstreamAnnouncement{})
 	return res.RowsAffected, res.Error
 }
 

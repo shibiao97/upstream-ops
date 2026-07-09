@@ -15,39 +15,41 @@ func NewChannels(db *gorm.DB) *Channels { return &Channels{db: db} }
 func (r *Channels) Create(c *Channel) error { return r.db.Create(c).Error }
 func (r *Channels) Update(c *Channel) error { return r.db.Save(c).Error }
 func (r *Channels) Delete(id uint) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		var channel Channel
-		if err := tx.Select("id", "name").First(&channel, id).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	return r.db.Transaction(func(tx *gorm.DB) error { return deleteChannelCascade(tx, id) })
+}
+
+func deleteChannelCascade(tx *gorm.DB, id uint) error {
+	var channel Channel
+	if err := tx.Select("id", "name").First(&channel, id).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if err := tx.Where("channel_id = ?", id).Delete(&AuthSession{}).Error; err != nil {
+		return err
+	}
+	for _, model := range []any{
+		&RateSnapshot{},
+		&RateChangeLog{},
+		&BalanceSnapshot{},
+		&CostSnapshot{},
+		&MonitorLog{},
+		&NotificationCooldown{},
+		&UpstreamAnnouncement{},
+	} {
+		if err := tx.Where("channel_id = ?", id).Delete(model).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("channel_id = ?", id).Delete(&AuthSession{}).Error; err != nil {
+	}
+	if err := tx.Where("upstream_channel_id = ?", id).Delete(&NotificationLog{}).Error; err != nil {
+		return err
+	}
+	if channel.Name != "" {
+		pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(channel.Name) + "%"
+		if err := tx.Where("upstream_channel_id = 0 AND (subject LIKE ? ESCAPE '!' OR body LIKE ? ESCAPE '!')", pattern, pattern).
+			Delete(&NotificationLog{}).Error; err != nil {
 			return err
 		}
-		for _, model := range []any{
-			&RateSnapshot{},
-			&RateChangeLog{},
-			&BalanceSnapshot{},
-			&CostSnapshot{},
-			&MonitorLog{},
-			&NotificationCooldown{},
-			&UpstreamAnnouncement{},
-		} {
-			if err := tx.Where("channel_id = ?", id).Delete(model).Error; err != nil {
-				return err
-			}
-		}
-		if err := tx.Where("upstream_channel_id = ?", id).Delete(&NotificationLog{}).Error; err != nil {
-			return err
-		}
-		if channel.Name != "" {
-			pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(channel.Name) + "%"
-			if err := tx.Where("upstream_channel_id = 0 AND (subject LIKE ? ESCAPE '!' OR body LIKE ? ESCAPE '!')", pattern, pattern).
-				Delete(&NotificationLog{}).Error; err != nil {
-				return err
-			}
-		}
-		return tx.Delete(&Channel{}, id).Error
-	})
+	}
+	return tx.Delete(&Channel{}, id).Error
 }
 func (r *Channels) FindByID(id uint) (*Channel, error) {
 	var c Channel
@@ -84,9 +86,62 @@ func (r *Channels) ListPage(page, pageSize int) ([]Channel, int64, error) {
 	}
 	return list, total, nil
 }
+
+func (r *Channels) ListVisible(ownerID uint, super bool) ([]Channel, error) {
+	q := r.db.Order("sort_order DESC").Order("id ASC")
+	if !super {
+		q = q.Where("owner_user_id = ?", ownerID)
+	} else if ownerID != 0 {
+		q = q.Where("owner_user_id = ?", ownerID)
+	}
+	var list []Channel
+	if err := q.Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+func (r *Channels) ListPageVisible(page, pageSize int, ownerID uint, super bool) ([]Channel, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 && pageSize != -1 {
+		pageSize = 20
+	}
+	q := r.db.Model(&Channel{})
+	if !super {
+		q = q.Where("owner_user_id = ?", ownerID)
+	} else if ownerID != 0 {
+		q = q.Where("owner_user_id = ?", ownerID)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	q = q.Order("sort_order DESC").Order("id ASC")
+	if pageSize != -1 {
+		q = q.Offset((page - 1) * pageSize).Limit(pageSize)
+	}
+	var list []Channel
+	if err := q.Find(&list).Error; err != nil {
+		return nil, 0, err
+	}
+	return list, total, nil
+}
 func (r *Channels) ListMonitorEnabled() ([]Channel, error) {
 	var list []Channel
 	if err := r.db.Where("monitor_enabled = ?", true).Order("sort_order DESC").Order("id ASC").Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+func (r *Channels) ListMonitorEnabledByOwner(ownerID uint) ([]Channel, error) {
+	q := r.db.Where("monitor_enabled = ?", true)
+	if ownerID != 0 {
+		q = q.Where("owner_user_id = ?", ownerID)
+	}
+	var list []Channel
+	if err := q.Order("sort_order DESC").Order("id ASC").Find(&list).Error; err != nil {
 		return nil, err
 	}
 	return list, nil

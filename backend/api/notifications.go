@@ -13,7 +13,12 @@ import (
 func registerNotifications(g *gin.RouterGroup, d *Deps) {
 	gpc := g.Group("/notifications/channels")
 	gpc.GET("", func(c *gin.Context) {
-		list, err := d.Notifies.ListChannels()
+		u, ok := currentUser(c, d)
+		if !ok {
+			fail(c, http.StatusUnauthorized, errors.New("missing user"))
+			return
+		}
+		list, err := d.Notifies.ListChannelsVisible(visibleOwnerParam(c, u), isSuper(u))
 		if err != nil {
 			fail(c, http.StatusInternalServerError, err)
 			return
@@ -26,6 +31,14 @@ func registerNotifications(g *gin.RouterGroup, d *Deps) {
 		id, err := uintParam(c, "id")
 		if err != nil {
 			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		ch, err := d.Notifies.FindChannel(id)
+		if err != nil {
+			fail(c, http.StatusNotFound, err)
+			return
+		}
+		if !canUseNotify(c, d, ch) {
 			return
 		}
 		if err := d.Notifies.DeleteChannel(id); err != nil {
@@ -42,12 +55,18 @@ func registerNotifications(g *gin.RouterGroup, d *Deps) {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
-		list, total, err := d.Notifies.ListLogsPage(page, pageSize)
+		u, ok := currentUser(c, d)
+		if !ok {
+			fail(c, http.StatusUnauthorized, errors.New("missing user"))
+			return
+		}
+		ownerID := visibleOwnerParam(c, u)
+		list, total, err := d.Notifies.ListLogsPageVisible(page, pageSize, ownerID, isSuper(u))
 		if err != nil {
 			fail(c, http.StatusInternalServerError, err)
 			return
 		}
-		channels, err := d.Notifies.ListChannels()
+		channels, err := d.Notifies.ListChannelsVisible(ownerID, isSuper(u))
 		if err != nil {
 			fail(c, http.StatusInternalServerError, err)
 			return
@@ -119,6 +138,11 @@ func normalizeSubscriptions(raw string) (string, error) {
 }
 
 func createNotifyChannel(c *gin.Context, d *Deps) {
+	u, ok := currentUser(c, d)
+	if !ok {
+		fail(c, http.StatusUnauthorized, errors.New("missing user"))
+		return
+	}
 	var in notifyChannelInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		fail(c, http.StatusBadRequest, err)
@@ -139,6 +163,7 @@ func createNotifyChannel(c *gin.Context, d *Deps) {
 		return
 	}
 	ch := &storage.NotificationChannel{
+		OwnerUserID:   u.ID,
 		Name:          in.Name,
 		Type:          in.Type,
 		ConfigCipher:  cipherCfg,
@@ -162,6 +187,9 @@ func updateNotifyChannel(c *gin.Context, d *Deps) {
 	ch, err := d.Notifies.FindChannel(id)
 	if err != nil {
 		fail(c, http.StatusNotFound, err)
+		return
+	}
+	if !canUseNotify(c, d, ch) {
 		return
 	}
 	var in notifyChannelInput
@@ -205,6 +233,9 @@ func testNotify(c *gin.Context, d *Deps) {
 		fail(c, http.StatusNotFound, err)
 		return
 	}
+	if !canUseNotify(c, d, ch) {
+		return
+	}
 	msg := notify.Message{
 		Subject: "测试通知",
 		Body:    "这是一条来自 UpstreamOps 的测试消息。",
@@ -214,4 +245,17 @@ func testNotify(c *gin.Context, d *Deps) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func canUseNotify(c *gin.Context, d *Deps, ch *storage.NotificationChannel) bool {
+	u, ok := currentUser(c, d)
+	if !ok {
+		fail(c, http.StatusUnauthorized, errors.New("missing user"))
+		return false
+	}
+	if !isSuper(u) && ch.OwnerUserID != u.ID {
+		fail(c, http.StatusForbidden, errors.New("无权访问该通知渠道"))
+		return false
+	}
+	return true
 }
