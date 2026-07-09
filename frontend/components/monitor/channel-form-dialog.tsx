@@ -413,7 +413,7 @@ export function ChannelFormDialog({ open, onOpenChange, channel }: ChannelFormDi
           </div>
 
           {/* —— password 模式字段 —— */}
-          {!isTokenMode && isSuperAdmin ? (
+          {!isTokenMode ? (
             <>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
