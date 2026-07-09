@@ -69,6 +69,10 @@ func (s *apiKeyChannelServiceStub) RevealAPIKey(ctx context.Context, channelID u
 	return s.revealed, nil
 }
 
+func (s *apiKeyChannelServiceStub) ListAPIKeyModels(ctx context.Context, channelID uint, keyID int64) ([]connector.APIKeyModel, error) {
+	return []connector.APIKeyModel{{ID: "gpt-test", Provider: "openai"}}, nil
+}
+
 func (s *apiKeyChannelServiceStub) TestAPIKey(ctx context.Context, channelID uint, keyID int64, req connector.APIKeyTestRequest) (*connector.APIKeyTestResult, error) {
 	return &connector.APIKeyTestResult{OK: true, Status: http.StatusOK, Model: req.Model, Provider: req.Provider, Content: "ok"}, nil
 }
@@ -164,6 +168,22 @@ func TestChannelAPIKeyEndpoints(t *testing.T) {
 	}
 	if revealResp.Data.Key != "sk-full" {
 		t.Fatalf("revealed key = %q", revealResp.Data.Key)
+	}
+
+	modelsReq := httptest.NewRequest(http.MethodGet, "/api/channels/1/api-keys/11/models", nil)
+	modelsRec := httptest.NewRecorder()
+	r.ServeHTTP(modelsRec, modelsReq)
+	if modelsRec.Code != http.StatusOK {
+		t.Fatalf("models status = %d body = %s", modelsRec.Code, modelsRec.Body.String())
+	}
+	var modelsResp struct {
+		Data []connector.APIKeyModel `json:"data"`
+	}
+	if err := json.Unmarshal(modelsRec.Body.Bytes(), &modelsResp); err != nil {
+		t.Fatalf("decode models: %v", err)
+	}
+	if len(modelsResp.Data) != 1 || modelsResp.Data[0].ID != "gpt-test" {
+		t.Fatalf("models response = %#v", modelsResp.Data)
 	}
 
 	testReq := httptest.NewRequest(http.MethodPost, "/api/channels/1/api-keys/11/test", strings.NewReader(`{"model":"gpt-test"}`))

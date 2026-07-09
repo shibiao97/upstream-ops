@@ -1195,6 +1195,23 @@ func (s *Service) TestAPIKey(ctx context.Context, channelID uint, keyID int64, r
 	return result, nil
 }
 
+func (s *Service) ListAPIKeyModels(ctx context.Context, channelID uint, keyID int64) ([]connector.APIKeyModel, error) {
+	_, resolved, conn, session, err := s.prepareConnectorCall(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	key, err := conn.RevealAPIKey(ctx, resolved, session, keyID)
+	if err != nil {
+		return nil, err
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, errors.New("上游未返回完整密钥")
+	}
+	models := append(listOpenAICompatibleModels(ctx, resolved, key), listAnthropicCompatibleModels(ctx, resolved, key)...)
+	return uniqueAPIKeyModels(models), nil
+}
+
 func normalizeAPIKeyTestProvider(provider, model string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "anthropic", "openai":
@@ -1243,6 +1260,91 @@ func testAnthropicCompatibleKey(ctx context.Context, ch *connector.Channel, key,
 	})
 }
 
+func listOpenAICompatibleModels(ctx context.Context, ch *connector.Channel, key string) []connector.APIKeyModel {
+	body, status, err := getAPIKeyJSON(ctx, ch, key, "/v1/models", nil)
+	if err != nil || status < 200 || status >= 300 {
+		return nil
+	}
+	var raw struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &raw) != nil {
+		return nil
+	}
+	out := make([]connector.APIKeyModel, 0, len(raw.Data))
+	for _, item := range raw.Data {
+		if id := strings.TrimSpace(item.ID); id != "" {
+			out = append(out, connector.APIKeyModel{ID: id, Provider: normalizeAPIKeyTestProvider("", id)})
+		}
+	}
+	return out
+}
+
+func listAnthropicCompatibleModels(ctx context.Context, ch *connector.Channel, key string) []connector.APIKeyModel {
+	body, status, err := getAPIKeyJSON(ctx, ch, key, "/v1/models", func(req *http.Request) {
+		req.Header.Del("Authorization")
+		req.Header.Set("x-api-key", key)
+		req.Header.Set("anthropic-version", "2023-06-01")
+	})
+	if err != nil || status < 200 || status >= 300 {
+		return nil
+	}
+	var raw struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &raw) != nil {
+		return nil
+	}
+	out := make([]connector.APIKeyModel, 0, len(raw.Data))
+	for _, item := range raw.Data {
+		if id := strings.TrimSpace(item.ID); id != "" {
+			out = append(out, connector.APIKeyModel{ID: id, Provider: "anthropic"})
+		}
+	}
+	return out
+}
+
+func uniqueAPIKeyModels(items []connector.APIKeyModel) []connector.APIKeyModel {
+	seen := make(map[string]bool, len(items))
+	out := make([]connector.APIKeyModel, 0, len(items))
+	for _, item := range items {
+		id := strings.TrimSpace(item.ID)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		item.ID = id
+		if strings.TrimSpace(item.Provider) == "" {
+			item.Provider = normalizeAPIKeyTestProvider("", id)
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func getAPIKeyJSON(ctx context.Context, ch *connector.Channel, key, path string, setup func(*http.Request)) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(ch.SiteURL, "/")+path, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Accept", "application/json")
+	if setup != nil {
+		setup(req)
+	}
+	resp, err := apiKeyHTTPClient(ch).Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return body, resp.StatusCode, nil
+}
+
 func postAPIKeyTest(ctx context.Context, ch *connector.Channel, key, path string, body []byte, result *connector.APIKeyTestResult, setup func(*http.Request)) *connector.APIKeyTestResult {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(ch.SiteURL, "/")+path, bytes.NewReader(body))
 	if err != nil {
@@ -1256,15 +1358,8 @@ func postAPIKeyTest(ctx context.Context, ch *connector.Channel, key, path string
 		setup(req)
 	}
 
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if proxy := strings.TrimSpace(ch.ProxyURL); proxy != "" {
-		if u, err := url.Parse(proxy); err == nil {
-			transport.Proxy = http.ProxyURL(u)
-		}
-	}
-	client := &http.Client{Transport: transport, Timeout: 60 * time.Second}
 	started := time.Now()
-	resp, err := client.Do(req)
+	resp, err := apiKeyHTTPClient(ch).Do(req)
 	result.LatencyMS = time.Since(started).Milliseconds()
 	if err != nil {
 		result.Error = err.Error()
@@ -1283,6 +1378,16 @@ func postAPIKeyTest(ctx context.Context, ch *connector.Channel, key, path string
 		result.Error = http.StatusText(resp.StatusCode)
 	}
 	return result
+}
+
+func apiKeyHTTPClient(ch *connector.Channel) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if proxy := strings.TrimSpace(ch.ProxyURL); proxy != "" {
+		if u, err := url.Parse(proxy); err == nil {
+			transport.Proxy = http.ProxyURL(u)
+		}
+	}
+	return &http.Client{Transport: transport, Timeout: 60 * time.Second}
 }
 
 func extractAPIKeyTestContent(body []byte) string {

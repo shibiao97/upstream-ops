@@ -43,6 +43,7 @@ func registerChannels(g *gin.RouterGroup, d *Deps) {
 	gp.PUT("/:id/api-keys/:key_id", func(c *gin.Context) { updateChannelAPIKey(c, d) })
 	gp.DELETE("/:id/api-keys/:key_id", func(c *gin.Context) { deleteChannelAPIKey(c, d) })
 	gp.POST("/:id/api-keys/:key_id/reveal", func(c *gin.Context) { revealChannelAPIKey(c, d) })
+	gp.GET("/:id/api-keys/:key_id/models", func(c *gin.Context) { listChannelAPIKeyModels(c, d) })
 	gp.POST("/:id/api-keys/:key_id/test", func(c *gin.Context) { testChannelAPIKey(c, d) })
 	gp.POST("/:id/sync", func(c *gin.Context) { syncChannel(c, d) })
 	gp.GET("/:id/rates", func(c *gin.Context) { channelRates(c, d) })
@@ -634,6 +635,25 @@ func revealChannelAPIKey(c *gin.Context, d *Deps) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"key": key}})
+}
+
+func listChannelAPIKeyModels(c *gin.Context, d *Deps) {
+	id, err := uintParam(c, "id")
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	keyID, err := int64Param(c, "key_id")
+	if err != nil || keyID <= 0 {
+		fail(c, http.StatusBadRequest, fmt.Errorf("密钥 ID 无效"))
+		return
+	}
+	models, err := d.ChannelSvc.ListAPIKeyModels(c.Request.Context(), id, keyID)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": models})
 }
 
 func testChannelAPIKey(c *gin.Context, d *Deps) {

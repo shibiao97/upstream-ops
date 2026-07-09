@@ -39,6 +39,7 @@ import type {
   Channel,
   ChannelAPIKey,
   ChannelAPIKeyGroup,
+  ChannelAPIKeyModel,
   ChannelAPIKeyPage,
   ChannelAPIKeyReveal,
   ChannelAPIKeyStatus,
@@ -213,7 +214,11 @@ function maskKey(key: string) {
 
 function modelOptionsForKey(key: ChannelAPIKey | null) {
   const limits = key?.model_limits_enabled ? splitLines(key.model_limits ?? "") : []
-  return Array.from(new Set([...limits, ...TEST_MODELS]))
+  return limits.length > 0 ? Array.from(new Set(limits)) : TEST_MODELS
+}
+
+function providerForModel(models: ChannelAPIKeyModel[], model: string) {
+  return models.find((item) => item.id === model)?.provider || AUTO_PROVIDER
 }
 
 async function copyText(text: string, label = "已复制") {
@@ -267,6 +272,8 @@ export function ChannelAPIKeysDialog({
   const [testingKey, setTestingKey] = useState<ChannelAPIKey | null>(null)
   const [testModel, setTestModel] = useState(TEST_MODELS[0])
   const [testProvider, setTestProvider] = useState(AUTO_PROVIDER)
+  const [testModels, setTestModels] = useState<ChannelAPIKeyModel[]>([])
+  const [modelsLoading, setModelsLoading] = useState(false)
   const [customModel, setCustomModel] = useState("")
   const [testPrompt, setTestPrompt] = useState("What model are you? Answer briefly.")
   const [testResult, setTestResult] = useState<ChannelAPIKeyTestResult | null>(null)
@@ -291,6 +298,8 @@ export function ChannelAPIKeysDialog({
     setRevealedKeys({})
     setTestingKey(null)
     setTestResult(null)
+    setTestModels([])
+    setModelsLoading(false)
     setTesting(false)
   }, [open, channel?.id])
 
@@ -499,10 +508,26 @@ export function ChannelAPIKeysDialog({
     const models = modelOptionsForKey(key)
     setTestingKey(key)
     setTestResult(null)
+    setTestModels(models.map((id) => ({ id, provider: AUTO_PROVIDER })))
     setTestModel(models[0] ?? TEST_MODELS[0])
     setTestProvider(AUTO_PROVIDER)
     setCustomModel("")
     setTestPrompt("What model are you? Answer briefly.")
+    if (!channel) return
+    setModelsLoading(true)
+    apiFetch<ChannelAPIKeyModel[]>(`/channels/${channel.id}/api-keys/${key.id}/models`)
+      .then((res) => {
+        const items = Array.isArray(res) ? res.filter((item) => item.id?.trim()) : []
+        if (items.length === 0) return
+        setTestModels(items)
+        setTestModel(items[0].id)
+        setTestProvider(providerForModel(items, items[0].id))
+      })
+      .catch((e) => {
+        const err = e as Error
+        toast.error(err.message || "加载上游模型失败，已使用兜底模型")
+      })
+      .finally(() => setModelsLoading(false))
   }
 
   async function runKeyTest() {
@@ -862,17 +887,27 @@ export function ChannelAPIKeysDialog({
             </div>
 
             <Field label="选择测试模型">
-              <Select value={testModel} onValueChange={setTestModel} disabled={testing}>
+              <Select
+                value={testModel}
+                onValueChange={(value) => {
+                  setTestModel(value)
+                  setTestProvider(providerForModel(testModels, value))
+                }}
+                disabled={testing || modelsLoading}
+              >
                 <SelectTrigger className="w-full">
-                  <SelectValue />
+                  <SelectValue placeholder={modelsLoading ? "加载上游模型中…" : undefined} />
                 </SelectTrigger>
                 <SelectContent>
-                  {modelOptionsForKey(testingKey).map((model) => (
-                    <SelectItem key={model} value={model}>{model}</SelectItem>
+                  {testModels.map((model) => (
+                    <SelectItem key={model.id} value={model.id}>
+                      {model.id}{model.provider && model.provider !== AUTO_PROVIDER ? ` · ${model.provider}` : ""}
+                    </SelectItem>
                   ))}
                   <SelectItem value={CUSTOM_MODEL}>自定义模型</SelectItem>
                 </SelectContent>
               </Select>
+              {modelsLoading ? <p className="text-xs text-muted-foreground">正在从上游读取支持的模型…</p> : null}
             </Field>
             {testModel === CUSTOM_MODEL ? (
               <Field label="自定义模型">

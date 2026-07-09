@@ -44,6 +44,7 @@ type channelService interface {
 	UpdateAPIKey(ctx context.Context, channelID uint, keyID int64, req connector.APIKeyUpdateRequest) (*connector.APIKey, error)
 	DeleteAPIKey(ctx context.Context, channelID uint, keyID int64) error
 	RevealAPIKey(ctx context.Context, channelID uint, keyID int64) (string, error)
+	ListAPIKeyModels(ctx context.Context, channelID uint, keyID int64) ([]connector.APIKeyModel, error)
 	TestAPIKey(ctx context.Context, channelID uint, keyID int64, req connector.APIKeyTestRequest) (*connector.APIKeyTestResult, error)
 }
 

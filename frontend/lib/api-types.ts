@@ -492,3 +492,8 @@ export interface ChannelAPIKeyTestResult {
   content?: string
   error?: string
 }
+
+export interface ChannelAPIKeyModel {
+  id: string
+  provider: string
+}

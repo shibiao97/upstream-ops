@@ -294,6 +294,11 @@ type APIKeyTestResult struct {
 	Error     string `json:"error,omitempty"`
 }
 
+type APIKeyModel struct {
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
+}
+
 type APIKeyCreateRequest struct {
 	Name               string   `json:"name"`
 	CustomKey          string   `json:"custom_key,omitempty"`
