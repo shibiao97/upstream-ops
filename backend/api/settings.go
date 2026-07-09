@@ -125,6 +125,12 @@ func getUserSchedulerConfig(c *gin.Context, d *Deps) {
 		return
 	}
 	cfg := config.SchedulerConfig{}
+	inherited := true
+	if d.Runtime != nil {
+		if fileCfg, err := config.LoadFile(d.Runtime.ConfigPath()); err == nil {
+			cfg = fileCfg.Scheduler
+		}
+	}
 	if d.UserSchedulers != nil {
 		row, err := d.UserSchedulers.Get(u.ID)
 		if err != nil {
@@ -133,9 +139,10 @@ func getUserSchedulerConfig(c *gin.Context, d *Deps) {
 		}
 		if row != nil && row.ConfigJSON != "" {
 			_ = json.Unmarshal([]byte(row.ConfigJSON), &cfg)
+			inherited = false
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"scheduler": cfg}})
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"scheduler": cfg, "inherited": inherited}})
 }
 
 func saveUserSchedulerConfig(c *gin.Context, d *Deps) {

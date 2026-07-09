@@ -78,7 +78,7 @@ function UserSettingsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    apiFetch<{ scheduler: SystemSchedulerConfig }>("/settings/user-scheduler")
+    apiFetch<{ scheduler: SystemSchedulerConfig; inherited?: boolean }>("/settings/user-scheduler")
       .then((res) =>
         setScheduler(
           res.scheduler ?? {
@@ -126,7 +126,7 @@ function UserSettingsPage() {
         <SectionCard
           icon={<Clock3 className="size-4 text-sky-600" />}
           title="调度与保留策略"
-          description="这些任务只扫描和清理你自己的渠道数据。"
+          description="未保存个人策略时默认继承管理员系统策略；这些任务只扫描和清理你自己的渠道数据。"
         >
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="余额采集 Cron" description="留空则不自动采集余额。">

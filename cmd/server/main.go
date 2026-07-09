@@ -146,6 +146,12 @@ func main() {
 		func(userID uint, scfg config.SchedulerConfig) *scheduler.Scheduler {
 			return scheduler.NewForOwner(scfg, userID, monitorSvc, monLogs, rates, notifies, announcements, nil, nil, cfg.Proxy, log)
 		},
+		func() config.SchedulerConfig {
+			if latest, err := config.LoadFile(resolvedConfigPath); err == nil {
+				return latest.Scheduler
+			}
+			return cfg.Scheduler
+		},
 		log,
 	)
 	userRunner.Start()

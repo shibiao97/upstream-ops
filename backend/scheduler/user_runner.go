@@ -15,23 +15,25 @@ import (
 type UserSchedulerFactory func(userID uint, cfg config.SchedulerConfig) *Scheduler
 
 type UserRunner struct {
-	settings *storage.UserSchedulerSettings
-	users    *storage.Users
-	factory  UserSchedulerFactory
-	log      *slog.Logger
-	tick     time.Duration
-	last     map[string]time.Time
-	cancel   context.CancelFunc
+	settings      *storage.UserSchedulerSettings
+	users         *storage.Users
+	factory       UserSchedulerFactory
+	defaultConfig func() config.SchedulerConfig
+	log           *slog.Logger
+	tick          time.Duration
+	last          map[string]time.Time
+	cancel        context.CancelFunc
 }
 
-func NewUserRunner(settings *storage.UserSchedulerSettings, users *storage.Users, factory UserSchedulerFactory, log *slog.Logger) *UserRunner {
+func NewUserRunner(settings *storage.UserSchedulerSettings, users *storage.Users, factory UserSchedulerFactory, defaultConfig func() config.SchedulerConfig, log *slog.Logger) *UserRunner {
 	return &UserRunner{
-		settings: settings,
-		users:    users,
-		factory:  factory,
-		log:      log,
-		tick:     time.Minute,
-		last:     map[string]time.Time{},
+		settings:      settings,
+		users:         users,
+		factory:       factory,
+		defaultConfig: defaultConfig,
+		log:           log,
+		tick:          time.Minute,
+		last:          map[string]time.Time{},
 	}
 }
 
@@ -72,29 +74,31 @@ func (r *UserRunner) run(now time.Time) {
 		r.warn("list users for scheduler", err)
 		return
 	}
-	enabled := map[uint]bool{}
-	for _, u := range users {
-		if u.Enabled && u.Role == storage.UserRoleUser {
-			enabled[u.ID] = true
-		}
-	}
+	byUser := map[uint]storage.UserSchedulerSetting{}
 	for _, row := range rows {
-		if !enabled[row.UserID] {
+		byUser[row.UserID] = row
+	}
+	for _, u := range users {
+		if !u.Enabled || u.Role != storage.UserRoleUser {
 			continue
 		}
-		var cfg config.SchedulerConfig
-		if err := json.Unmarshal([]byte(row.ConfigJSON), &cfg); err != nil {
-			r.warn("decode user scheduler", err)
-			continue
+		cfg := config.SchedulerConfig{}
+		if row, ok := byUser[u.ID]; ok && row.ConfigJSON != "" {
+			if err := json.Unmarshal([]byte(row.ConfigJSON), &cfg); err != nil {
+				r.warn("decode user scheduler", err)
+				continue
+			}
+		} else if r.defaultConfig != nil {
+			cfg = r.defaultConfig()
 		}
-		s := r.factory(row.UserID, cfg)
-		if due(r.last, row.UserID, "balance", cfg.BalanceCron, now) {
+		s := r.factory(u.ID, cfg)
+		if due(r.last, u.ID, "balance", cfg.BalanceCron, now) {
 			s.RunBalanceNow()
 		}
-		if due(r.last, row.UserID, "rates", cfg.RateCron, now) {
+		if due(r.last, u.ID, "rates", cfg.RateCron, now) {
 			s.RunRatesNow()
 		}
-		if due(r.last, row.UserID, "retention", cfg.Retention.Cron, now) {
+		if due(r.last, u.ID, "retention", cfg.Retention.Cron, now) {
 			s.RunRetentionNow()
 		}
 	}
