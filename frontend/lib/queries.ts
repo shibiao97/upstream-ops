@@ -17,6 +17,8 @@ import type {
   RateChangeLog,
   RateChangeLogPage,
   RateSnapshot,
+  RelayConfig,
+  RelaySummary,
   SystemConfigResponse,
   UpstreamAnnouncementPage,
 } from "@/lib/api-types"
@@ -145,6 +147,15 @@ export function useBalanceTrend(days = 7) {
 
 export function useCostTrend(days = 7) {
   return useApi<CostTrendPoint[]>(`/dashboard/cost-trend?days=${days}`)
+}
+
+export function useRelayConfig() {
+  return useApi<RelayConfig>("/relay/config")
+}
+
+export function useRelaySummary(date?: string) {
+  const q = date ? `?date=${encodeURIComponent(date)}` : ""
+  return useApi<RelaySummary>(`/relay/summary${q}`)
 }
 
 export function useChannels() {

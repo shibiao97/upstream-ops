@@ -225,6 +225,67 @@ export interface CostTrendPoint {
   cost: number
 }
 
+export interface RelayAccountMultiplier {
+  account_id: number
+  name: string
+  multiplier: number
+}
+
+export interface RelayConfig {
+  configured: boolean
+  id?: number
+  name?: string
+  site_url?: string
+  admin_email?: string
+  enabled: boolean
+  last_checked_at?: string | null
+  last_error?: string
+  account_multipliers: RelayAccountMultiplier[]
+}
+
+export interface RelayAccount {
+  id: number
+  name: string
+  rate_multiplier?: number
+}
+
+export interface RelaySummary {
+  configured: boolean
+  enabled: boolean
+  actual_cost: number
+  cost: number
+  request_count: number
+  last_checked_at?: string | null
+  last_error?: string
+}
+
+export interface RelayAccountUsageDetail {
+  account_id: number
+  account_name: string
+  actual_cost: number
+  cost: number
+  multiplier: number
+  request_count: number
+}
+
+export interface RelayUserUsage {
+  user_id: number
+  username: string
+  actual_cost: number
+  cost: number
+  request_count: number
+  main_account: string
+  accounts: RelayAccountUsageDetail[]
+}
+
+export interface RelayUsersPage {
+  items: RelayUserUsage[]
+  total: number
+  page: number
+  page_size: number
+  pages: number
+}
+
 export interface SystemAuthConfig {
   enabled: boolean
   username: string

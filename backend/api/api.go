@@ -14,6 +14,7 @@ import (
 	"github.com/bejix/upstream-ops/backend/connector"
 	"github.com/bejix/upstream-ops/backend/crypto"
 	"github.com/bejix/upstream-ops/backend/notify"
+	"github.com/bejix/upstream-ops/backend/relay"
 	"github.com/bejix/upstream-ops/backend/runtimeconfig"
 	"github.com/bejix/upstream-ops/backend/storage"
 	"github.com/gin-gonic/gin"
@@ -63,6 +64,7 @@ type Deps struct {
 	ChannelSvc    channelService
 	Monitor       monitorService
 	Dispatcher    *notify.Dispatcher
+	Relay         *relay.Service
 	Log           *slog.Logger
 
 	// Frontend 可选：传入嵌入的前端 dist 文件系统。nil 表示不挂载（本地开发用 vite dev server）。
@@ -98,6 +100,7 @@ func Register(r *gin.Engine, d *Deps) {
 		registerRates(api, d)
 		registerMonitorLogs(api, d)
 		registerDashboard(api, d)
+		registerRelay(api, d)
 		registerSettings(api, d)
 	}
 

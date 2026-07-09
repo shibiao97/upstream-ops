@@ -180,6 +180,35 @@ type CostSnapshot struct {
 
 func (CostSnapshot) TableName() string { return "cost_snapshots" }
 
+// RelayConfig 保存自有 Sub2API 中转站管理员配置。当前版本只使用一条配置。
+type RelayConfig struct {
+	ID             uint       `gorm:"primaryKey" json:"id"`
+	Name           string     `gorm:"size:128;not null" json:"name"`
+	SiteURL        string     `gorm:"size:512;not null" json:"site_url"`
+	AdminEmail     string     `gorm:"size:256;not null" json:"admin_email"`
+	PasswordCipher string     `gorm:"type:text;not null" json:"-"`
+	Enabled        bool       `gorm:"default:true" json:"enabled"`
+	LastCheckedAt  *time.Time `json:"last_checked_at,omitempty"`
+	LastError      string     `gorm:"type:text" json:"last_error,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+func (RelayConfig) TableName() string { return "relay_configs" }
+
+// RelayAccountMultiplier 保存 Sub2API 账号成本倍率，按账号 ID 匹配 usage log。
+type RelayAccountMultiplier struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	ConfigID   uint      `gorm:"not null;uniqueIndex:idx_relay_cfg_account" json:"config_id"`
+	AccountID  int64     `gorm:"not null;uniqueIndex:idx_relay_cfg_account" json:"account_id"`
+	Name       string    `gorm:"size:256" json:"name"`
+	Multiplier float64   `gorm:"not null;default:1" json:"multiplier"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+func (RelayAccountMultiplier) TableName() string { return "relay_account_multipliers" }
+
 // NotificationChannelType 通知渠道类型。第一版至少 telegram，其它预留。
 type NotificationChannelType string
 

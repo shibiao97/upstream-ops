@@ -83,7 +83,7 @@ export function MultiplierChanges() {
 
   return (
     <>
-      <Card className="min-h-0 overflow-hidden border border-border shadow-none lg:h-100">
+      <Card className="min-h-0 overflow-hidden border border-border shadow-none lg:h-80">
         <CardHeader className="flex shrink-0 flex-row items-center justify-between px-4 pb-2 sm:px-6">
           <CardTitle className="text-base font-semibold">{"最近倍率变动"}</CardTitle>
           <div className="flex items-center gap-3">
@@ -99,7 +99,7 @@ export function MultiplierChanges() {
           ) : items.length === 0 ? (
             <p className="px-6 py-6 text-xs text-muted-foreground">{"暂无倍率变动记录"}</p>
           ) : (
-            <ScrollArea type="hover" className="max-h-80 lg:h-full lg:max-h-none">
+            <ScrollArea type="hover" className="max-h-64 lg:h-full lg:max-h-none">
               <ul className="divide-y divide-border">
                 {items.map((item) => (
                   <MultiplierChangeRow key={item.id} item={item} channelMap={channelMap} />

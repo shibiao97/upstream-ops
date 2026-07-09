@@ -20,6 +20,7 @@ import (
 	"github.com/bejix/upstream-ops/backend/logger"
 	"github.com/bejix/upstream-ops/backend/monitor"
 	"github.com/bejix/upstream-ops/backend/notify"
+	"github.com/bejix/upstream-ops/backend/relay"
 	"github.com/bejix/upstream-ops/backend/runtimeconfig"
 	"github.com/bejix/upstream-ops/backend/scheduler"
 	"github.com/bejix/upstream-ops/backend/storage"
@@ -99,6 +100,7 @@ func main() {
 	announcements := storage.NewUpstreamAnnouncements(db)
 	rates := storage.NewRates(db)
 	monLogs := storage.NewMonitorLogs(db)
+	relays := storage.NewRelays(db)
 
 	channelSvc := channel.NewService(channels, authSessions, captchas, rates, monLogs, cipher)
 	channelSvc.UpdateProxyConfig(cfg.Proxy)
@@ -117,6 +119,7 @@ func main() {
 	})
 	dispatcher.UpdateProxyConfig(cfg.Proxy)
 	monitorSvc := monitor.NewService(channels, announcements, rates, monLogs, channelSvc, dispatcher, log)
+	relaySvc := relay.NewService(relays, cipher)
 
 	schedulerFactory := func(scfg config.SchedulerConfig, pcfg config.ProxyConfig) *scheduler.Scheduler {
 		return scheduler.New(scfg, monitorSvc, monLogs, rates, notifies, announcements, captchas, cipher, pcfg, log)
@@ -172,6 +175,7 @@ func main() {
 		ChannelSvc:    channelSvc,
 		Monitor:       monitorSvc,
 		Dispatcher:    dispatcher,
+		Relay:         relaySvc,
 		Log:           log,
 		Frontend:      frontendFS,
 	})

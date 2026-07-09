@@ -108,7 +108,7 @@ export function BalanceOverview() {
   const activeDot = isMobile ? { r: 4, strokeWidth: 0 } : { r: 5, strokeWidth: 0 }
 
   return (
-    <Card className="border border-border shadow-none lg:h-100">
+    <Card className="border border-border shadow-none lg:h-80">
       <CardHeader className="flex shrink-0 flex-row items-center justify-between px-4 pb-2 sm:px-6">
         <CardTitle className="text-base font-semibold">{"余额概览"}</CardTitle>
         <span className="text-xs text-muted-foreground">{"最近 7 天"}</span>
@@ -126,7 +126,7 @@ export function BalanceOverview() {
             </span>
           </span>
         </div>
-        <div className="h-64 min-h-0 w-full sm:h-72 lg:h-auto lg:flex-1">
+        <div className="h-56 min-h-0 w-full sm:h-60 lg:h-auto lg:flex-1">
           {isLoading ? (
             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">{"加载中…"}</div>
           ) : data.length === 0 ? (
@@ -190,8 +190,8 @@ export function BalanceOverview() {
 
         {/* per-channel chips */}
         {channels.length > 0 ? (
-          <div className="mt-3 flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-t border-border pt-3">
-            {channels.map((c) => {
+          <div className="mt-2 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-2">
+            {channels.slice(0, 4).map((c) => {
               const isFailed = !!c.last_error
               const isUnknown = c.last_balance == null
               return (
@@ -205,12 +205,11 @@ export function BalanceOverview() {
                   <span className="max-w-32 truncate font-medium text-foreground sm:max-w-none">{c.name}</span>
                   <span className="min-w-0 tabular-nums text-muted-foreground">
                     {money(c.last_balance)}
-                    {" · 今日 "}
-                    {money(c.today_cost)}
                   </span>
                 </span>
               )
             })}
+            {channels.length > 4 ? <span className="text-xs text-muted-foreground">{`+${channels.length - 4}`}</span> : null}
           </div>
         ) : null}
       </CardContent>
