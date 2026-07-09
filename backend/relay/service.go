@@ -20,6 +20,7 @@ import (
 )
 
 const defaultPageSize = 200
+const defaultPullIntervalMinutes = 5
 
 type Service struct {
 	Repo   *storage.Relays
@@ -38,24 +39,26 @@ type AccountMultiplierInput struct {
 }
 
 type ConfigInput struct {
-	Name               string                   `json:"name"`
-	SiteURL            string                   `json:"site_url"`
-	AdminEmail         string                   `json:"admin_email"`
-	Password           string                   `json:"password"`
-	Enabled            bool                     `json:"enabled"`
-	AccountMultipliers []AccountMultiplierInput `json:"account_multipliers"`
+	Name                string                   `json:"name"`
+	SiteURL             string                   `json:"site_url"`
+	AdminEmail          string                   `json:"admin_email"`
+	Password            string                   `json:"password"`
+	Enabled             bool                     `json:"enabled"`
+	PullIntervalMinutes int                      `json:"pull_interval_minutes"`
+	AccountMultipliers  []AccountMultiplierInput `json:"account_multipliers"`
 }
 
 type ConfigOutput struct {
-	Configured         bool                     `json:"configured"`
-	ID                 uint                     `json:"id,omitempty"`
-	Name               string                   `json:"name,omitempty"`
-	SiteURL            string                   `json:"site_url,omitempty"`
-	AdminEmail         string                   `json:"admin_email,omitempty"`
-	Enabled            bool                     `json:"enabled"`
-	LastCheckedAt      *time.Time               `json:"last_checked_at,omitempty"`
-	LastError          string                   `json:"last_error,omitempty"`
-	AccountMultipliers []AccountMultiplierInput `json:"account_multipliers"`
+	Configured          bool                     `json:"configured"`
+	ID                  uint                     `json:"id,omitempty"`
+	Name                string                   `json:"name,omitempty"`
+	SiteURL             string                   `json:"site_url,omitempty"`
+	AdminEmail          string                   `json:"admin_email,omitempty"`
+	Enabled             bool                     `json:"enabled"`
+	PullIntervalMinutes int                      `json:"pull_interval_minutes"`
+	LastCheckedAt       *time.Time               `json:"last_checked_at,omitempty"`
+	LastError           string                   `json:"last_error,omitempty"`
+	AccountMultipliers  []AccountMultiplierInput `json:"account_multipliers"`
 }
 
 type TestResult struct {
@@ -125,7 +128,7 @@ type sub2Resp struct {
 func (s *Service) GetConfig() (*ConfigOutput, error) {
 	cfg, err := s.Repo.FindConfig()
 	if err != nil || cfg == nil {
-		return &ConfigOutput{Enabled: true}, err
+		return &ConfigOutput{Enabled: true, PullIntervalMinutes: defaultPullIntervalMinutes}, err
 	}
 	multipliers, err := s.Repo.ListMultipliers(cfg.ID)
 	if err != nil {
@@ -341,7 +344,7 @@ func (s *Service) resolveInput(in ConfigInput) (*storage.RelayConfig, string, er
 	if existing != nil {
 		id = existing.ID
 	}
-	return &storage.RelayConfig{ID: id, Name: name, SiteURL: site, AdminEmail: email, Enabled: in.Enabled}, password, nil
+	return &storage.RelayConfig{ID: id, Name: name, SiteURL: site, AdminEmail: email, Enabled: in.Enabled, PullIntervalMinutes: normalizePullInterval(in.PullIntervalMinutes)}, password, nil
 }
 
 func (s *Service) login(ctx context.Context, site, email, password string) (string, error) {
@@ -472,16 +475,27 @@ func (s *Service) doJSON(ctx context.Context, method, url, token string, body an
 	return nil
 }
 
+func normalizePullInterval(minutes int) int {
+	if minutes <= 0 {
+		return defaultPullIntervalMinutes
+	}
+	if minutes > 1440 {
+		return 1440
+	}
+	return minutes
+}
+
 func configOutput(cfg *storage.RelayConfig) *ConfigOutput {
 	return &ConfigOutput{
-		Configured:    true,
-		ID:            cfg.ID,
-		Name:          cfg.Name,
-		SiteURL:       cfg.SiteURL,
-		AdminEmail:    cfg.AdminEmail,
-		Enabled:       cfg.Enabled,
-		LastCheckedAt: cfg.LastCheckedAt,
-		LastError:     cfg.LastError,
+		Configured:          true,
+		ID:                  cfg.ID,
+		Name:                cfg.Name,
+		SiteURL:             cfg.SiteURL,
+		AdminEmail:          cfg.AdminEmail,
+		Enabled:             cfg.Enabled,
+		PullIntervalMinutes: normalizePullInterval(cfg.PullIntervalMinutes),
+		LastCheckedAt:       cfg.LastCheckedAt,
+		LastError:           cfg.LastError,
 	}
 }
 

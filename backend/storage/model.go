@@ -182,16 +182,17 @@ func (CostSnapshot) TableName() string { return "cost_snapshots" }
 
 // RelayConfig 保存自有 Sub2API 中转站管理员配置。当前版本只使用一条配置。
 type RelayConfig struct {
-	ID             uint       `gorm:"primaryKey" json:"id"`
-	Name           string     `gorm:"size:128;not null" json:"name"`
-	SiteURL        string     `gorm:"size:512;not null" json:"site_url"`
-	AdminEmail     string     `gorm:"size:256;not null" json:"admin_email"`
-	PasswordCipher string     `gorm:"type:text;not null" json:"-"`
-	Enabled        bool       `gorm:"default:true" json:"enabled"`
-	LastCheckedAt  *time.Time `json:"last_checked_at,omitempty"`
-	LastError      string     `gorm:"type:text" json:"last_error,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID                  uint       `gorm:"primaryKey" json:"id"`
+	Name                string     `gorm:"size:128;not null" json:"name"`
+	SiteURL             string     `gorm:"size:512;not null" json:"site_url"`
+	AdminEmail          string     `gorm:"size:256;not null" json:"admin_email"`
+	PasswordCipher      string     `gorm:"type:text;not null" json:"-"`
+	Enabled             bool       `gorm:"default:true" json:"enabled"`
+	PullIntervalMinutes int        `gorm:"not null;default:5" json:"pull_interval_minutes"`
+	LastCheckedAt       *time.Time `json:"last_checked_at,omitempty"`
+	LastError           string     `gorm:"type:text" json:"last_error,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 func (RelayConfig) TableName() string { return "relay_configs" }

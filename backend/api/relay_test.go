@@ -62,12 +62,21 @@ func TestRelaySaveRequiresSub2APIAdmin(t *testing.T) {
 		t.Fatalf("non-admin save status = %d body = %s", badRec.Code, badRec.Body.String())
 	}
 
-	goodReq := httptest.NewRequest(http.MethodPut, "/api/relay/config", strings.NewReader(`{"site_url":"`+fake.URL+`","admin_email":"admin@example.com","password":"p","enabled":true,"account_multipliers":[{"account_id":1,"name":"acc-a","multiplier":3}]}`))
+	goodReq := httptest.NewRequest(http.MethodPut, "/api/relay/config", strings.NewReader(`{"site_url":"`+fake.URL+`","admin_email":"admin@example.com","password":"p","enabled":true,"pull_interval_minutes":15,"account_multipliers":[{"account_id":1,"name":"acc-a","multiplier":3}]}`))
 	goodReq.Header.Set("Content-Type", "application/json")
 	goodRec := httptest.NewRecorder()
 	r.ServeHTTP(goodRec, goodReq)
 	if goodRec.Code != http.StatusOK {
 		t.Fatalf("admin save status = %d body = %s", goodRec.Code, goodRec.Body.String())
+	}
+	var goodResp struct {
+		Data relay.ConfigOutput `json:"data"`
+	}
+	if err := json.Unmarshal(goodRec.Body.Bytes(), &goodResp); err != nil {
+		t.Fatalf("decode config: %v", err)
+	}
+	if goodResp.Data.PullIntervalMinutes != 15 {
+		t.Fatalf("pull interval = %d, want 15", goodResp.Data.PullIntervalMinutes)
 	}
 }
 

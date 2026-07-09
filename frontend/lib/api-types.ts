@@ -238,6 +238,7 @@ export interface RelayConfig {
   site_url?: string
   admin_email?: string
   enabled: boolean
+  pull_interval_minutes: number
   last_checked_at?: string | null
   last_error?: string
   account_multipliers: RelayAccountMultiplier[]

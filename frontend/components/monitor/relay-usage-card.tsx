@@ -36,6 +36,7 @@ interface RelayForm {
   admin_email: string
   password: string
   enabled: boolean
+  pull_interval_minutes: string
   account_multipliers: MultiplierFormRow[]
 }
 
@@ -56,6 +57,7 @@ function initialForm(config?: RelayConfig | null): RelayForm {
     admin_email: config?.admin_email ?? "",
     password: "",
     enabled: config?.enabled ?? true,
+    pull_interval_minutes: String(config?.pull_interval_minutes || 5),
     account_multipliers: (config?.account_multipliers ?? []).map((m) => ({
       account_id: m.account_id,
       name: m.name,
@@ -71,6 +73,7 @@ function bodyFromForm(form: RelayForm) {
     admin_email: form.admin_email,
     password: form.password,
     enabled: form.enabled,
+    pull_interval_minutes: Math.min(1440, Math.max(1, Number(form.pull_interval_minutes) || 5)),
     account_multipliers: form.account_multipliers.map((m) => ({
       account_id: m.account_id,
       name: m.name,
@@ -99,6 +102,15 @@ export function RelayUsageCard() {
 
   const data = summary.data
   const configured = data?.configured || config.data?.configured
+  const pullInterval = Math.min(1440, Math.max(1, config.data?.pull_interval_minutes || 5))
+
+  useEffect(() => {
+    if (!config.data?.configured || !config.data.enabled) return
+    const timer = window.setInterval(() => summary.refetch(), pullInterval * 60 * 1000)
+    return () => window.clearInterval(timer)
+    // summary.refetch identity is intentionally not a dependency; interval is controlled by saved config.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.data?.configured, config.data?.enabled, pullInterval])
 
   return (
     <>
@@ -126,7 +138,7 @@ export function RelayUsageCard() {
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="grid grid-cols-2 gap-3">
                 <Metric label="今日用户消费" value={money(data?.actual_cost)} tone="brand" />
-                <Metric label="我的成本" value={money(data?.cost)} tone="warning" />
+                <Metric label="今日成本" value={money(data?.cost)} tone="warning" />
               </div>
               <div className="mt-3 rounded-lg border border-border p-3 text-xs">
                 <div className="flex items-center justify-between gap-2">
@@ -142,6 +154,10 @@ export function RelayUsageCard() {
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <span className="text-muted-foreground">{"最后检查"}</span>
                   <span>{relativeTime(data?.last_checked_at)}</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">{"拉取间隔"}</span>
+                  <span>{pullInterval}{" 分钟"}</span>
                 </div>
                 {data?.last_error ? <p className="mt-2 line-clamp-2 text-danger">{data.last_error}</p> : null}
               </div>
@@ -254,7 +270,7 @@ function RelayConfigDialog({ open, onOpenChange, config }: { open: boolean; onOp
                 <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
                   <div>
                     <Label>{"启用"}</Label>
-                    <p className="text-[11px] text-muted-foreground">{"关闭后卡片不拉取用量"}</p>
+                    <p className="text-[11px] text-muted-foreground">{"关闭后卡片不自动拉取用量"}</p>
                   </div>
                   <Switch checked={form.enabled} onCheckedChange={(v) => setForm({ ...form, enabled: v })} disabled={submitting || testing} />
                 </div>
@@ -272,6 +288,11 @@ function RelayConfigDialog({ open, onOpenChange, config }: { open: boolean; onOp
                   <Label htmlFor="relay-password">{config?.configured ? "管理员密码 (留空沿用)" : "管理员密码"}</Label>
                   <Input id="relay-password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required={!config?.configured} disabled={submitting || testing} />
                 </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="relay-interval">自动拉取间隔（分钟）</Label>
+                <Input id="relay-interval" type="number" min="1" max="1440" step="1" value={form.pull_interval_minutes} onChange={(e) => setForm({ ...form, pull_interval_minutes: e.target.value })} disabled={submitting || testing} />
+                <p className="text-[11px] text-muted-foreground">{"首页卡片按这个间隔自动刷新今日消费和今日成本。"}</p>
               </div>
 
               <div className="rounded-lg border border-border">
@@ -368,12 +389,12 @@ function RelayUsersDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
       <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>{"用户消费明细"}</DialogTitle>
-          <DialogDescription>{"默认按当天用户实际消费从大到小排序。"}</DialogDescription>
+          <DialogDescription>{`当前只统计 ${date}，默认按用户实际消费从大到小排序。`}</DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Input type="date" className="w-44" value={date} onChange={(e) => { setDate(e.target.value); setPage(1) }} />
           <div className="flex gap-4 text-xs text-muted-foreground">
-            <span>{"本页消费 "}<b className="text-foreground">{money(totals.actual)}</b></span>
+            <span>{"本页实际消费 "}<b className="text-foreground">{money(totals.actual)}</b></span>
             <span>{"本页成本 "}<b className="text-foreground">{money(totals.cost)}</b></span>
           </div>
         </div>
@@ -396,13 +417,21 @@ function RelayUsersDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                       <p className="font-medium text-foreground">{row.request_count} 请求</p>
                       <p className="text-muted-foreground">{"账号 "}{row.accounts.length}</p>
                     </div>
-                    <div className="w-28 text-right">
+                    <div className="w-32 text-right">
+                      <p className="text-[10px] text-muted-foreground">{"实际消费"}</p>
                       <p className="text-sm font-semibold tabular-nums text-brand">{money(row.actual_cost)}</p>
+                      <p className="mt-1 text-[10px] text-muted-foreground">{"成本"}</p>
                       <p className="text-xs tabular-nums text-warning">{money(row.cost)}</p>
                     </div>
                   </button>
                   {isOpen ? (
                     <div className="mt-3 rounded-lg bg-muted/30">
+                      <div className="grid grid-cols-[1fr_90px_90px] gap-2 border-b border-border/60 px-3 py-2 text-[11px] text-muted-foreground sm:grid-cols-[1fr_90px_90px_90px]">
+                        <span>{"账号/渠道"}</span>
+                        <span className="text-right">{"实际消费"}</span>
+                        <span className="text-right">{"成本"}</span>
+                        <span className="hidden text-right sm:block">{"倍率"}</span>
+                      </div>
                       {row.accounts.map((account) => (
                         <div key={`${key}:${account.account_id}`} className="grid grid-cols-[1fr_90px_90px] gap-2 px-3 py-2 text-xs sm:grid-cols-[1fr_90px_90px_90px]">
                           <span className="min-w-0 truncate">{account.account_name}</span>
