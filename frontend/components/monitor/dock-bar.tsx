@@ -18,6 +18,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useAddChannel } from "@/lib/add-channel-context"
+import { useAuth } from "@/lib/auth-context"
 
 interface DockItem {
   icon: LucideIcon
@@ -145,6 +146,7 @@ export function DockBar() {
   const navigate = useNavigate()
   const location = useLocation()
   const { openAdd } = useAddChannel()
+  const { isSuperAdmin } = useAuth()
 
   const items: DockItem[] = [
     {
@@ -173,11 +175,11 @@ export function DockBar() {
     },
     {
       icon: Settings,
-      label: "系统设置",
+      label: isSuperAdmin ? "系统设置" : "个人设置",
       path: "/settings",
       gradient: "from-zinc-400 via-zinc-500 to-zinc-700",
     },
-  ]
+  ].filter((item) => isSuperAdmin || item.path !== "/captcha")
 
   const [mouseX, setMouseX] = useState<number | null>(null)
   const dockRef = useRef<HTMLDivElement>(null)

@@ -101,10 +101,11 @@ func (s *Service) TokenTTL() time.Duration { return s.tokenTTL }
 
 func (s *Service) Middleware() gin.HandlerFunc {
 	whitelist := map[string]struct{}{
-		"/healthz":           {},
-		"/api/version":       {},
-		"/api/auth/login":    {},
-		"/api/auth/register": {},
+		"/healthz":            {},
+		"/api/version":        {},
+		"/api/auth/login":     {},
+		"/api/auth/register":  {},
+		"/api/auth/send-code": {},
 	}
 	return func(c *gin.Context) {
 		if _, ok := whitelist[c.FullPath()]; ok {

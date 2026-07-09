@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/bejix/upstream-ops/backend/storage"
 	"github.com/gin-gonic/gin"
@@ -12,6 +11,7 @@ import (
 func registerAuth(g *gin.RouterGroup, d *Deps) {
 	g.POST("/auth/login", func(c *gin.Context) { login(c, d) })
 	g.POST("/auth/register", func(c *gin.Context) { register(c, d) })
+	g.POST("/auth/send-code", func(c *gin.Context) { sendAuthCode(c, d) })
 	g.GET("/auth/me", func(c *gin.Context) { whoami(c, d) })
 	g.POST("/auth/logout", func(c *gin.Context) {
 		// 无状态 token，客户端丢弃即可；这个接口仅作语义存在。
@@ -22,17 +22,18 @@ func registerAuth(g *gin.RouterGroup, d *Deps) {
 type loginInput struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
+	Code     string `json:"code" binding:"required"`
 }
 
 type registerInput struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
+	Code     string `json:"code" binding:"required"`
 }
 
 func login(c *gin.Context, d *Deps) {
 	// 鉴权关闭：任何登录请求都直接成功；前端在 /auth/me 已经知道无需登录。
-	authSvc := d.Runtime.CurrentAuth()
-	if authSvc == nil {
+	if d.Runtime == nil || d.Runtime.CurrentAuth() == nil {
 		c.JSON(http.StatusOK, gin.H{
 			"data": gin.H{
 				"auth_disabled": true,
@@ -46,7 +47,16 @@ func login(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
-	token, exp, u, err := authSvc.Login(in.Username, in.Password)
+	username, err := normalizeAllowedEmail(in.Username)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	if err := verifyEmailCode(username, "login", in.Code); err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	token, exp, u, err := d.Runtime.CurrentAuth().Login(username, in.Password)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
@@ -72,7 +82,11 @@ func register(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
-	username := strings.TrimSpace(in.Username)
+	username, err := normalizeAllowedEmail(in.Username)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
 	if username == "" || len(in.Password) < 6 {
 		fail(c, http.StatusBadRequest, errors.New("账号不能为空，密码至少 6 位"))
 		return
@@ -81,12 +95,31 @@ func register(c *gin.Context, d *Deps) {
 		fail(c, http.StatusBadRequest, errors.New("该账号已保留"))
 		return
 	}
+	if err := verifyEmailCode(username, "register", in.Code); err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
 	u, err := d.Users.Create(username, in.Password)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": userOutput(u)})
+	if d.Runtime == nil || d.Runtime.CurrentAuth() == nil {
+		c.JSON(http.StatusOK, gin.H{"data": userOutput(u)})
+		return
+	}
+	token, exp, u, err := d.Runtime.CurrentAuth().Login(username, in.Password)
+	if err != nil {
+		fail(c, http.StatusUnauthorized, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"token":      token,
+		"expires_at": exp.Unix(),
+		"user_id":    u.ID,
+		"username":   u.Username,
+		"role":       u.Role,
+	}})
 }
 
 // whoami 既是"前端启动探测"接口也是"已登录信息"接口。

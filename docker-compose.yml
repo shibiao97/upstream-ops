@@ -18,6 +18,11 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-1550696493@qq.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_HOST: ${SMTP_HOST:-smtp.qq.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_TLS: ${SMTP_TLS:-true}
     ports:
       - "${HTTP_PORT:-8080}:8418"
     volumes:

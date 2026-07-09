@@ -26,8 +26,8 @@ interface AuthContextValue {
   isSuperAdmin: boolean
   /** 后端关闭了鉴权（AUTH_ENABLED=false），整套 UI 当作"已登录"渲染。 */
   authDisabled: boolean
-  login: (username: string, password: string) => Promise<void>
-  register: (username: string, password: string) => Promise<void>
+  login: (username: string, password: string, code: string) => Promise<void>
+  register: (username: string, password: string, code: string) => Promise<void>
   logout: () => void
 }
 
@@ -104,12 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null)
   }, [])
 
-  const login = useCallback(async (u: string, p: string) => {
-    const res = await apiFetch<LoginResponse>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ username: u, password: p }),
-      skipAuthErrorHandler: true,
-    })
+  const applyAuth = useCallback((res: LoginResponse) => {
     if (res.token) {
       setToken(res.token)
     }
@@ -122,14 +117,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus("authenticated")
   }, [])
 
-  const register = useCallback(async (u: string, p: string) => {
-    await apiFetch("/auth/register", {
+  const login = useCallback(async (u: string, p: string, code: string) => {
+    const res = await apiFetch<LoginResponse>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ username: u, password: p }),
+      body: JSON.stringify({ username: u, password: p, code }),
       skipAuthErrorHandler: true,
     })
-    await login(u, p)
-  }, [login])
+    applyAuth(res)
+  }, [applyAuth])
+
+  const register = useCallback(async (u: string, p: string, code: string) => {
+    const res = await apiFetch<LoginResponse>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: u, password: p, code }),
+      skipAuthErrorHandler: true,
+    })
+    applyAuth(res)
+  }, [applyAuth])
 
   const logout = useCallback(() => {
     // 鉴权关闭时 logout 按钮在 UI 上不会展示，这里仍保留兜底逻辑

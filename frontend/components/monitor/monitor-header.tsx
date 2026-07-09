@@ -33,6 +33,7 @@ export function MonitorHeader() {
   const latestVersion = appVersion.data?.latest_version?.trim()
   const updateAvailable = Boolean(appVersion.data?.update_available && latestVersion)
   const updateURL = appVersion.data?.release_url?.trim() || appVersion.data?.repo_url?.trim()
+  const repoURL = "https://github.com/shibiao97/upstream-ops"
 
   useEffect(() => setMounted(true), [])
 
@@ -107,7 +108,7 @@ export function MonitorHeader() {
                 </button>
                 {updateAvailable ? (
                   <a
-                    href={updateURL || "https://github.com/bejix/upstream-ops"}
+                    href={updateURL || repoURL}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="ml-2 font-medium text-emerald-600 underline-offset-2 hover:text-emerald-700 hover:underline"
@@ -224,22 +225,22 @@ export function MonitorHeader() {
           ) : null}
 
           {/* settings */}
-          {isSuperAdmin ? <Tooltip delayDuration={200}>
+          <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <Button
                 variant="outline"
                 size="icon"
                 onClick={() => navigate("/settings")}
                 className="size-8 border-border bg-background text-foreground hover:bg-muted"
-                aria-label="系统设置"
+                aria-label={isSuperAdmin ? "系统设置" : "个人设置"}
               >
                 <Settings className="size-3.5" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
-              {"系统设置"}
+              {isSuperAdmin ? "系统设置" : "个人设置"}
             </TooltipContent>
-          </Tooltip> : null}
+          </Tooltip>
 
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
@@ -251,7 +252,7 @@ export function MonitorHeader() {
                 aria-label="GitHub 仓库"
               >
                 <a
-                  href="https://github.com/bejix/upstream-ops"
+                  href={repoURL}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -260,7 +261,7 @@ export function MonitorHeader() {
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
-              {"GitHub · bejix/upstream-ops"}
+              {"GitHub · shibiao97/upstream-ops"}
             </TooltipContent>
           </Tooltip>
 
