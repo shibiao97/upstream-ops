@@ -13,6 +13,8 @@ import (
 	"github.com/bejix/upstream-ops/backend/storage"
 )
 
+const failureNotificationThreshold = 3
+
 // Dispatcher 把单条事件 fan-out 到所有启用的通知渠道，并按 Policy 做去抖。
 type Dispatcher struct {
 	repo     *storage.Notifications
@@ -106,6 +108,39 @@ func (d *Dispatcher) Dispatch(ctx context.Context, msg Message) error {
 		return nil
 	}
 	return d.fanout(ctx, msg, nil)
+}
+
+// DispatchFailure 前三次连续失败正常告警，之后只记录状态并保持探测。
+func (d *Dispatcher) DispatchFailure(ctx context.Context, probe string, msg Message) error {
+	count, err := d.repo.RecordFailure(msg.ChannelID, probe, msg.Event, msg.Body)
+	if err != nil {
+		if d.log != nil {
+			d.log.Warn("record notification failure state failed, sending anyway", "err", err, "channel_id", msg.ChannelID, "probe", probe)
+		}
+		return d.Dispatch(ctx, msg)
+	}
+	if count > failureNotificationThreshold {
+		if d.log != nil {
+			d.log.Debug("repeated failure notification suppressed", "channel_id", msg.ChannelID, "probe", probe, "count", count)
+		}
+		return nil
+	}
+	return d.Dispatch(ctx, msg)
+}
+
+// DispatchRecovery 仅在探测项曾失败时发送一次恢复通知，并清零连续失败状态。
+func (d *Dispatcher) DispatchRecovery(ctx context.Context, probe string, msg Message) error {
+	state, err := d.repo.ResolveFailure(msg.ChannelID, probe)
+	if err != nil {
+		return err
+	}
+	if state == nil {
+		return nil
+	}
+	msg.Event = state.Event
+	msg.Body = fmt.Sprintf("检测已恢复正常。\n此前连续失败：%d 次\n最后错误：%s\n恢复时间：%s",
+		state.ConsecutiveFailures, state.LastError, time.Now().Format("2006-01-02 15:04:05"))
+	return d.Dispatch(ctx, msg)
 }
 
 // DispatchRateBatch 把一次扫描收集到的多条 RateChange 按 Policy 合并 / 过滤后推送。

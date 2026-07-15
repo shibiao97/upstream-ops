@@ -26,6 +26,14 @@ type Service struct {
 	log           *slog.Logger
 }
 
+const (
+	probeLogin        = "login"
+	probeBalance      = "balance"
+	probeCost         = "cost"
+	probeRates        = "rates"
+	probeSubscription = "subscription"
+)
+
 func NewService(
 	channels *storage.Channels,
 	announcements *storage.UpstreamAnnouncements,
@@ -106,8 +114,8 @@ func (s *Service) OwnerChannelIDs(ownerID uint) []uint {
 // RefreshBalance 单个渠道余额刷新，可被 API 手动触发。
 func (s *Service) RefreshBalance(ctx context.Context, c *storage.Channel) error {
 	resolved, conn, session, err := s.prepare(ctx, c)
+	s.notifyProbeResult(ctx, c, probeLogin, storage.EventLoginFailed, "登录", err)
 	if err != nil {
-		s.notifyError(ctx, c, storage.EventLoginFailed, "登录失败", err)
 		return err
 	}
 
@@ -123,9 +131,9 @@ func (s *Service) RefreshBalance(ctx context.Context, c *storage.Channel) error 
 		StartedAt:    started,
 		FinishedAt:   finished,
 	})
+	s.notifyProbeResult(ctx, c, probeBalance, storage.EventMonitorFailed, "余额采集", err)
 	if err != nil {
 		progress.Fail(ctx, progress.StageBalance, err.Error())
-		s.notifyError(ctx, c, storage.EventMonitorFailed, "余额采集失败", err)
 		return err
 	}
 
@@ -146,9 +154,9 @@ func (s *Service) RefreshBalance(ctx context.Context, c *storage.Channel) error 
 
 	progress.Start(ctx, progress.StageCost, "拉取消费…")
 	costRes, err := conn.GetCosts(ctx, resolved, session)
+	s.notifyProbeResult(ctx, c, probeCost, storage.EventMonitorFailed, "消费采集", err)
 	if err != nil {
 		progress.Fail(ctx, progress.StageCost, err.Error())
-		s.notifyError(ctx, c, storage.EventMonitorFailed, "消费采集失败", err)
 		return err
 	}
 	if err := s.channels.UpdateCosts(c.ID, costRes.TodayCost, costRes.TotalCost); err != nil {
@@ -178,8 +186,8 @@ func (s *Service) RefreshBalance(ctx context.Context, c *storage.Channel) error 
 // RefreshRates 单个渠道倍率刷新，可被 API 手动触发。
 func (s *Service) RefreshRates(ctx context.Context, c *storage.Channel) error {
 	resolved, conn, session, err := s.prepare(ctx, c)
+	s.notifyProbeResult(ctx, c, probeLogin, storage.EventLoginFailed, "登录", err)
 	if err != nil {
-		s.notifyError(ctx, c, storage.EventLoginFailed, "登录失败", err)
 		return err
 	}
 
@@ -195,9 +203,9 @@ func (s *Service) RefreshRates(ctx context.Context, c *storage.Channel) error {
 		StartedAt:    started,
 		FinishedAt:   finished,
 	})
+	s.notifyProbeResult(ctx, c, probeRates, storage.EventMonitorFailed, "倍率采集", err)
 	if err != nil {
 		progress.Fail(ctx, progress.StageRates, err.Error())
-		s.notifyError(ctx, c, storage.EventMonitorFailed, "倍率采集失败", err)
 		return err
 	}
 
@@ -308,9 +316,9 @@ func (s *Service) CheckSubscriptionUsageAlerts(ctx context.Context, c *storage.C
 		return nil
 	}
 	info, err := s.channelSvc.GetSubscriptionUsage(ctx, c.ID)
+	s.notifyProbeResult(ctx, c, probeSubscription, storage.EventMonitorFailed, "订阅用量采集", err)
 	if err != nil {
 		progress.Fail(ctx, progress.StageSubscription, err.Error())
-		s.notifyError(ctx, c, storage.EventMonitorFailed, "订阅用量采集失败", err)
 		return err
 	}
 	s.dispatchSubscriptionWindowAlert(ctx, c, storage.EventSubscriptionDailyLow, "每日", policy.SubscriptionDailyRemainingThresholdPct, info.Items, func(item connector.SubscriptionUsage) *connector.SubscriptionUsageWindow {
@@ -425,13 +433,23 @@ func (s *Service) prepare(ctx context.Context, c *storage.Channel) (*connector.C
 	return resolved, conn, session, nil
 }
 
-func (s *Service) notifyError(ctx context.Context, c *storage.Channel, event storage.NotificationEvent, subject string, err error) {
-	_ = s.dispatcher.Dispatch(ctx, notify.Message{
-		Event:     event,
-		ChannelID: c.ID,
-		Subject:   fmt.Sprintf("%s %s", c.Name, subject),
-		Body:      err.Error(),
-	})
+func (s *Service) notifyProbeResult(ctx context.Context, c *storage.Channel, probe string, event storage.NotificationEvent, label string, probeErr error) {
+	if c == nil || s.dispatcher == nil {
+		return
+	}
+	msg := notify.Message{Event: event, ChannelID: c.ID}
+	var err error
+	if probeErr != nil {
+		msg.Subject = fmt.Sprintf("%s %s失败", c.Name, label)
+		msg.Body = probeErr.Error()
+		err = s.dispatcher.DispatchFailure(ctx, probe, msg)
+	} else {
+		msg.Subject = fmt.Sprintf("%s %s恢复正常", c.Name, label)
+		err = s.dispatcher.DispatchRecovery(ctx, probe, msg)
+	}
+	if err != nil && s.log != nil {
+		s.log.Warn("dispatch probe notification failed", "channel", c.Name, "probe", probe, "err", err)
+	}
 }
 
 func (s *Service) syncAnnouncements(ctx context.Context, c *storage.Channel, resolved *connector.Channel, conn connector.Connector, session *connector.AuthSession) error {

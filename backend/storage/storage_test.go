@@ -724,6 +724,16 @@ func TestDeleteChannelCleansScopedState(t *testing.T) {
 	if err := db.Create(&NotificationCooldown{ChannelID: ch.ID, Event: EventBalanceLow, LastSentAt: now}).Error; err != nil {
 		t.Fatalf("create cooldown: %v", err)
 	}
+	if err := db.Create(&NotificationFailureState{
+		ChannelID:           ch.ID,
+		Probe:               "balance",
+		Event:               EventMonitorFailed,
+		ConsecutiveFailures: 4,
+		LastError:           "failed",
+		LastFailedAt:        now,
+	}).Error; err != nil {
+		t.Fatalf("create failure state: %v", err)
+	}
 	if err := db.Create(&NotificationLog{ChannelID: 99, UpstreamChannelID: ch.ID, Event: EventBalanceLow, Subject: "alert", Success: true, SentAt: now}).Error; err != nil {
 		t.Fatalf("create notification log: %v", err)
 	}
@@ -749,6 +759,7 @@ func TestDeleteChannelCleansScopedState(t *testing.T) {
 		{"cost_snapshots", &CostSnapshot{}},
 		{"monitor_logs", &MonitorLog{}},
 		{"notification_cooldowns", &NotificationCooldown{}},
+		{"notification_failure_states", &NotificationFailureState{}},
 		{"upstream_announcements", &UpstreamAnnouncement{}},
 		{"notification_logs", &NotificationLog{}},
 	} {

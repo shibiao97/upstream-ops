@@ -134,6 +134,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&NotificationChannel{},
 		&NotificationLog{},
 		&NotificationCooldown{},
+		&NotificationFailureState{},
 		&MonitorLog{},
 	)
 }

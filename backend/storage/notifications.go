@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -200,4 +201,58 @@ func (r *Notifications) TryClaimCooldown(channelID uint, event NotificationEvent
 func (r *Notifications) ResetCooldown(channelID uint, event NotificationEvent) error {
 	return r.db.Where("channel_id = ? AND event = ?", channelID, event).
 		Delete(&NotificationCooldown{}).Error
+}
+
+// RecordFailure 原子累加某个渠道探测项的连续失败次数。
+func (r *Notifications) RecordFailure(channelID uint, probe string, event NotificationEvent, lastError string) (int, error) {
+	now := time.Now()
+	row := NotificationFailureState{
+		ChannelID:           channelID,
+		Probe:               probe,
+		Event:               event,
+		ConsecutiveFailures: 1,
+		LastError:           lastError,
+		LastFailedAt:        now,
+		UpdatedAt:           now,
+	}
+	if err := r.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "channel_id"}, {Name: "probe"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"event":                event,
+			"consecutive_failures": gorm.Expr("consecutive_failures + 1"),
+			"last_error":           lastError,
+			"last_failed_at":       now,
+			"updated_at":           now,
+		}),
+	}).Create(&row).Error; err != nil {
+		return 0, err
+	}
+	if err := r.db.Where("channel_id = ? AND probe = ?", channelID, probe).First(&row).Error; err != nil {
+		return 0, err
+	}
+	return row.ConsecutiveFailures, nil
+}
+
+// ResolveFailure 删除连续失败状态并返回恢复前的最后状态；没有失败记录时返回 nil。
+func (r *Notifications) ResolveFailure(channelID uint, probe string) (*NotificationFailureState, error) {
+	var state NotificationFailureState
+	found := false
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("channel_id = ? AND probe = ?", channelID, probe).
+			First(&state).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		found = true
+		return tx.Where("channel_id = ? AND probe = ?", channelID, probe).
+			Delete(&NotificationFailureState{}).Error
+	})
+	if err != nil || !found {
+		return nil, err
+	}
+	return &state, nil
 }

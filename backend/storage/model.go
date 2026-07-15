@@ -325,6 +325,19 @@ type NotificationCooldown struct {
 
 func (NotificationCooldown) TableName() string { return "notification_cooldowns" }
 
+// NotificationFailureState 保存上游探测的连续失败状态，用于限制重复告警并在恢复时通知。
+type NotificationFailureState struct {
+	ChannelID           uint              `gorm:"primaryKey" json:"channel_id"`
+	Probe               string            `gorm:"primaryKey;size:64" json:"probe"`
+	Event               NotificationEvent `gorm:"size:64;not null" json:"event"`
+	ConsecutiveFailures int               `gorm:"not null" json:"consecutive_failures"`
+	LastError           string            `gorm:"type:text" json:"last_error"`
+	LastFailedAt        time.Time         `gorm:"not null" json:"last_failed_at"`
+	UpdatedAt           time.Time         `json:"updated_at"`
+}
+
+func (NotificationFailureState) TableName() string { return "notification_failure_states" }
+
 // MonitorJob 监控任务类型。
 type MonitorJob string
 
